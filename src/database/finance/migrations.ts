@@ -1,3 +1,4 @@
+import { MIGRATION_002 } from './migration002.ts';
 import { atomic } from './connection.ts';
 import type { SqlConnection } from './connection.ts';
 import { assert } from '../../financial-engine/model.ts';
@@ -85,7 +86,7 @@ export async function migrateFinance(db: SqlConnection, timestamp: string) {
   const fk = await db.all<{ foreign_keys: number }>('PRAGMA foreign_keys');
   assert(fk[0]?.foreign_keys === 1, 'No se pudieron activar las relaciones');
   const version = (await db.all<{ user_version: number }>('PRAGMA user_version'))[0].user_version;
-  assert(version <= 1, 'La base pertenece a una versión futura');
+  assert(version <= 2, 'La base pertenece a una versión futura');
   if (version === 0) await atomic(db, async () => {
     // Recheck after obtaining the writer lock, including another connection's migration.
     const current = (await db.all<{ user_version: number }>('PRAGMA user_version'))[0].user_version;
@@ -95,4 +96,25 @@ export async function migrateFinance(db: SqlConnection, timestamp: string) {
       await db.exec('PRAGMA user_version=1');
     }
   });
+  if ((await db.all<{ user_version: number }>('PRAGMA user_version'))[0].user_version < 2) {
+    // SQLite's documented table rebuild requires FK suspension outside the transaction.
+    // The private connection is unavailable to application work until validation succeeds.
+    await db.exec('PRAGMA foreign_keys=OFF');
+    try {
+      await atomic(db, async () => {
+        const current = (await db.all<{ user_version: number }>('PRAGMA user_version'))[0].user_version;
+        if (current === 2) return;
+        assert(current === 1, 'Versión de migración inesperada');
+        await db.exec(MIGRATION_002);
+        await db.exec(MIGRATION_001.slice(MIGRATION_001.indexOf('CREATE TRIGGER post_balanced'), MIGRATION_001.indexOf('CREATE TRIGGER prevent_posted_insert')));
+        assert((await db.all('PRAGMA foreign_key_check')).length === 0, 'Relaciones inválidas después de migrar');
+        await db.run('INSERT INTO schema_migrations VALUES(?,?)', [2, timestamp]);
+        await db.exec('PRAGMA user_version=2');
+      });
+    } finally {
+      await db.exec('PRAGMA foreign_keys=ON');
+      assert((await db.all<{ foreign_keys: number }>('PRAGMA foreign_keys'))[0].foreign_keys === 1, 'Relaciones desactivadas');
+    }
+  }
+
 }

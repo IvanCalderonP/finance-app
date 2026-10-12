@@ -1,3 +1,4 @@
+import { createCreditCardApplication } from './card-application';
 import { createFinanceApplication } from './application';
 import { createSqliteUnitOfWork } from '../../database/finance/repositories';
 import { FINANCE_DATABASE_NAME } from '../../database/finance/migrations';
@@ -20,7 +21,7 @@ export async function initializeRuntime() {
 export async function newOperationKey() {
   await initializeRuntime(); return runtime.id();
 }
-export const finance = createFinanceApplication(createSqliteUnitOfWork(async (): Promise<SqlConnection> => {
+const unit = createSqliteUnitOfWork(async (): Promise<SqlConnection> => {
   await initializeRuntime();
   const SQLite = await import('expo-sqlite');
   // Replace this adapter later for encrypted SQLite; no UI/domain changes required.
@@ -31,4 +32,6 @@ export const finance = createFinanceApplication(createSqliteUnitOfWork(async ():
     all: <T>(sql: string, parameters = []) => db.getAllAsync<T>(sql, parameters),
     close: () => db.closeAsync(),
   };
-}, runtime), runtime);
+}, runtime);
+export const finance = createFinanceApplication(unit, runtime);
+export const creditCards = createCreditCardApplication(unit, runtime);

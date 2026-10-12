@@ -60,3 +60,7 @@ Doble conteo por reservas/deudas/ciclos/metas; movimientos duplicados; cambios r
 ## Flujo principal implementado
 
 Inicio ofrece Ingreso, Gasto, Gastos diarios y Transferir, además de crear cuentas. Gastos diarios registra un agregado desde banco bajo Gastos cotidianos, sin pedir remanente de efectivo. Transferir a efectivo requiere una cuenta cash creada expresamente. El seed de desarrollo contiene banco, ahorro protegido y secundaria, sin efectivo; es opcional y no se ejecuta al reiniciar. Tarjetas y los demás módulos avanzados no están implementados.
+
+## Tarjetas V1 disponibles
+
+Crear con deuda inicial, comprar con categorías compartidas, pago parcial/total, reverso total y corrección de ciclo con motivo. Lista, detalle, ciclos y desglose de pagos en /cards; Inicio muestra saldo físico, disponible real y deuda de tarjetas. UI provisional, únicamente datos sintéticos mientras no exista cifrado. Otros módulos permanecen pendientes.

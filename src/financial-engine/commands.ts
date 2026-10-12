@@ -9,7 +9,7 @@ function counterpart(context: Context, account: Account, node: LedgerNode, kind:
   accountMatches(context, account);
   assert(node.profileId === context.profileId && node.currency === account.currency && node.kind === kind, 'Contrapartida inválida');
 }
-function build(context: Context, currencyCode: string, type: Transaction['type'], entries: Entry[], splits: Split[] = [], subtype: Transaction['subtype'] = 'regular', reversalOf: string | null = null): Transaction {
+export function buildTransaction(context: Context, currencyCode: string, type: Transaction['type'], entries: Entry[], splits: Split[] = [], subtype: Transaction['subtype'] = 'regular', reversalOf: string | null = null): Transaction {
   assert(context.id.length > 0 && context.profileId.length > 0, 'Identificador inválido');
   assert(context.idempotencyKey.trim().length > 0 && context.idempotencyKey.length <= 200, 'Clave de operación inválida');
   assert(!Number.isNaN(Date.parse(context.createdAt)), 'Timestamp inválido'); date(context.effectiveDate); currency(currencyCode);
@@ -26,7 +26,7 @@ function build(context: Context, currencyCode: string, type: Transaction['type']
 function amount(value: number) { assert(integer(value) > 0, 'El monto debe ser mayor que cero'); }
 export function registerOpeningBalance(context: Context, account: Account, value: number, equity: LedgerNode) {
   counterpart(context, account, equity, 'EQUITY'); assert(integer(value) !== 0, 'Saldo inicial cero no requiere movimiento');
-  return build(context, account.currency, 'OPENING', value > 0 ? [
+  return buildTransaction(context, account.currency, 'OPENING', value > 0 ? [
     { nodeId: account.nodeId, debitMinor: value, creditMinor: 0 }, { nodeId: equity.id, debitMinor: 0, creditMinor: value },
   ] : [
     { nodeId: equity.id, debitMinor: -value, creditMinor: 0 }, { nodeId: account.nodeId, debitMinor: 0, creditMinor: -value },
@@ -34,7 +34,7 @@ export function registerOpeningBalance(context: Context, account: Account, value
 }
 export function registerIncome(context: Context, account: Account, value: number, income: LedgerNode, categoryId: string) {
   counterpart(context, account, income, 'INCOME'); amount(value);
-  return build(context, account.currency, 'INCOME', [
+  return buildTransaction(context, account.currency, 'INCOME', [
     { nodeId: account.nodeId, debitMinor: value, creditMinor: 0 }, { nodeId: income.id, debitMinor: 0, creditMinor: value },
   ], [{ categoryId, amountMinor: value }]);
 }
@@ -42,7 +42,7 @@ export function registerExpense(context: Context, account: Account, value: numbe
   counterpart(context, account, expense, 'EXPENSE'); amount(value);
   assert(integer(balanceMinor) >= value, 'Saldo insuficiente en la cuenta');
   assert(account.availabilityPolicy === 'free' || allowProtected, 'Confirma el uso de fondos protegidos');
-  return build(context, account.currency, 'EXPENSE', [
+  return buildTransaction(context, account.currency, 'EXPENSE', [
     { nodeId: expense.id, debitMinor: value, creditMinor: 0 }, { nodeId: account.nodeId, debitMinor: 0, creditMinor: value },
   ], [{ categoryId, amountMinor: value }]);
 }
@@ -56,7 +56,7 @@ export function transferBetweenAccounts(context: Context, from: Account, to: Acc
   assert(from.currency === to.currency, 'V1 no permite transferencias entre monedas');
   assert(integer(balanceMinor) >= value, 'Saldo insuficiente en la cuenta');
   assert(from.availabilityPolicy === 'free' || allowProtected, 'Confirma el uso de fondos protegidos');
-  return build(context, from.currency, 'TRANSFER', [
+  return buildTransaction(context, from.currency, 'TRANSFER', [
     { nodeId: to.nodeId, debitMinor: value, creditMinor: 0 }, { nodeId: from.nodeId, debitMinor: 0, creditMinor: value },
   ]);
 }
@@ -69,7 +69,7 @@ export function reverseTransaction(context: Context, original: Transaction) {
   assert(context.profileId === original.profileId, 'Movimiento fuera del perfil');
   assert(original.type !== 'REVERSAL', 'No se permite revertir un reverso');
   assert((context.description ?? '').trim().length > 0, 'El reverso necesita un motivo');
-  return build(context, original.currency, 'REVERSAL', original.entries.map(row => ({
+  return buildTransaction(context, original.currency, 'REVERSAL', original.entries.map(row => ({
     nodeId: row.nodeId, debitMinor: row.creditMinor, creditMinor: row.debitMinor,
   })), original.splits.map(row => ({ categoryId: row.categoryId, amountMinor: -row.amountMinor })), original.subtype, original.id);
 }

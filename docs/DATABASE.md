@@ -113,3 +113,7 @@ Solo una instancia de laboratorio posee la conexión y serializa lectura/escritu
 Base finance-local-v1.db, separada del laboratorio. Migración 001: profiles, accounts, ledger_nodes, transactions, transaction_entries, transaction_splits, categories y schema_migrations. Saldo derivado únicamente de entradas POSTED. Perfil LOCAL y categorías iniciales automáticos; ninguna cuenta o movimiento se siembra sin acción explícita.
 
 Retiro cotidiano = EXPENSE/daily, no transferencia ni creación de cash. Cash es un tipo opcional de cuenta. Se conservan los asientos confirmados y se crean reversos referenciados; los splits de gastos pueden reemplazarse atómicamente sin asientos nuevos. Restricciones compuestas por perfil/moneda, índices, posting equilibrado e inmutabilidad de entries. No existe columna editable de saldo. UUID se generan en infraestructura, no en el motor.
+
+## Tarjetas implementadas — migración 002
+
+Añade credit_cards, credit_card_cycles, credit_card_cycle_entries, credit_card_payments y credit_card_payment_applications; credit_card_cycle_corrections conserva motivo y ciclo anterior/nuevo. Pasivo LIABILITY: deuda = créditos − débitos POSTED. Apertura contra EQUITY, compra contra EXPENSE, pago contra ASSET; no hay saldo editable ni gasto al pagar. La base mantiene su nombre finance-local-v1.db y avanza a user_version=2. Reconstrucción de ledger_nodes según procedimiento SQLite, foreign_key_check antes de commit y foreign_keys reactivadas incluso ante fallo. No borra ni recrea los movimientos existentes.

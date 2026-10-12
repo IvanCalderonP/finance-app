@@ -1,6 +1,6 @@
 export type AccountType = 'bank' | 'savings' | 'custom' | 'cash';
 export type AvailabilityPolicy = 'free' | 'protected';
-export type NodeKind = 'ASSET' | 'EQUITY' | 'INCOME' | 'EXPENSE';
+export type NodeKind = 'ASSET' | 'LIABILITY' | 'EQUITY' | 'INCOME' | 'EXPENSE';
 export type TransactionType = 'OPENING' | 'INCOME' | 'EXPENSE' | 'TRANSFER' | 'ADJUSTMENT' | 'REVERSAL';
 export interface Profile { id: string; name: string; currency: string; createdAt: string }
 export interface Account {

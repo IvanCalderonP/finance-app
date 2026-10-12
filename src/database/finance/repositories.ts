@@ -1,3 +1,4 @@
+import { sqliteCardRepository } from './card-repositories.ts';
 import type { Account, Category, Entry, LedgerNode, Profile, Split, Transaction } from '../../financial-engine/model.ts';
 import { assert } from '../../financial-engine/model.ts';
 import type { Repositories, Runtime, UnitOfWork } from '../../services/finance/contracts.ts';
@@ -20,6 +21,7 @@ export function sqliteRepositories(db: SqlConnection, runtime: Runtime): Reposit
     };
   }
   const repositories: Repositories = {
+    cards: sqliteCardRepository(db, runtime),
     profiles: {
       async initial() {
         const rows = await db.all<Profile>("SELECT id,name,currency,created_at AS createdAt FROM profiles WHERE local_key='initial'");

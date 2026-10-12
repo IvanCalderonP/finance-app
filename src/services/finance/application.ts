@@ -1,3 +1,5 @@
+import { cardProjections } from './card-projections.ts';
+import type { CardSummary } from '../../financial-engine/cards.ts';
 import { assert, currency, date, integer, total } from '../../financial-engine/model.ts';
 import type { Account, AccountBalance, Category, Context, Split, Transaction } from '../../financial-engine/model.ts';
 import { calculateAccountBalance, calculateAvailableBalance, calculateNetWorth, calculatePhysicalBalance } from '../../financial-engine/calculations.ts';
@@ -13,8 +15,8 @@ export interface MovementInput extends BaseInput {
   accountId: string; amountMinor: number; categoryId?: string; toAccountId?: string; allowProtected?: boolean;
 }
 export interface FinanceSnapshot {
-  accounts: AccountBalance[]; categories: Category[]; transactions: Transaction[];
-  totals: { currency: string; physicalMinor: number; availableMinor: number; netWorthMinor: number; incomeMinor: number; expenseMinor: number }[];
+  cards: CardSummary[]; accounts: AccountBalance[]; categories: Category[]; transactions: Transaction[];
+  totals: { currency: string; physicalMinor: number; cardDebtMinor: number; availableMinor: number; netWorthMinor: number; incomeMinor: number; expenseMinor: number }[];
 }
 function key(value: string) { assert(value.trim().length > 0 && value.length <= 180, 'Clave de operación inválida'); }
 async function requireAccount(repositories: Repositories, profileId: string, accountId: string) {
@@ -25,16 +27,18 @@ async function categoriesValid(repositories: Repositories, profileId: string, sp
   const categories = await repositories.categories.list(profileId);
   for (const split of splits) assert(categories.some(category => category.id === split.categoryId && category.kind === kind), 'Categoría inexistente o incompatible con este perfil');
 }
-async function snapshot(repositories: Repositories, profileId: string): Promise<FinanceSnapshot> {
+async function snapshot(repositories: Repositories, profileId: string, asOf: string): Promise<FinanceSnapshot> {
   const accounts = await repositories.accounts.list(profileId);
   const entries = await repositories.ledger.entries(profileId);
   const balances = accounts.map(account => ({ account, balanceMinor: calculateAccountBalance(account, entries) }));
   const transactions = await repositories.transactions.list(profileId);
   const categories = await repositories.categories.list(profileId);
-  return { accounts: balances, categories, transactions,
-    totals: [...new Set(accounts.map(row => row.currency))].map(currency => ({
-      currency, physicalMinor: calculatePhysicalBalance(balances, currency), availableMinor: calculateAvailableBalance(balances, currency),
-      netWorthMinor: calculateNetWorth(balances, currency),
+  const cards = await cardProjections(repositories, profileId, entries, transactions, asOf);
+  const liabilities = cards.map(row => ({ id: row.card.id, currency: row.card.currency, amountMinor: row.debtMinor, alreadyExcludedMinor: 0 }));
+  return { cards, accounts: balances, categories, transactions,
+    totals: [...new Set([...accounts.map(row => row.currency), ...cards.map(row => row.card.currency)])].map(currency => ({
+      currency, cardDebtMinor: total(liabilities.filter(row => row.currency === currency).map(row => row.amountMinor)), physicalMinor: calculatePhysicalBalance(balances, currency), availableMinor: calculateAvailableBalance(balances, currency, liabilities),
+      netWorthMinor: calculateNetWorth(balances, currency, [], liabilities),
       incomeMinor: total(transactions.filter(row => row.currency === currency).flatMap(row => row.splits.filter(split => categories.some(category => category.id === split.categoryId && category.kind === 'INCOME')).map(split => split.amountMinor))),
       expenseMinor: total(transactions.filter(row => row.currency === currency).flatMap(row => row.splits.filter(split => categories.some(category => category.id === split.categoryId && category.kind === 'EXPENSE')).map(split => split.amountMinor))),
     })),
@@ -64,18 +68,18 @@ export function createFinanceApplication(unit: UnitOfWork, runtime: Runtime) {
       const opening = registerOpeningBalance(context({ ...input, idempotencyKey: `${input.idempotencyKey}:opening`, description: 'Saldo inicial' }), account, input.initialBalanceMinor, equity);
       await repositories.transactions.insert(opening, fingerprint);
     }
-    await snapshot(repositories, input.profileId); // Reject overflow before committing.
+    await snapshot(repositories, input.profileId, runtime.now().slice(0, 10)); // Reject overflow before committing.
     return account;
   }
   return {
     initialProfile: () => unit.execute(repositories => repositories.profiles.initial()),
-    snapshot: (profileId: string) => unit.execute(repositories => snapshot(repositories, profileId)),
+    snapshot: (profileId: string) => unit.execute(repositories => snapshot(repositories, profileId, runtime.now().slice(0, 10))),
     createAccount: (input: CreateAccountInput) => unit.execute(repositories => createAccount(repositories, input)),
     configureAccount: (profileId: string, accountId: string, active: boolean, policy: Account['availabilityPolicy']) => unit.execute(async repositories => {
       await requireAccount(repositories, profileId, accountId);
       assert(['free', 'protected'].includes(policy), 'Disponibilidad inválida');
       await repositories.accounts.configure(profileId, accountId, active, policy);
-      return snapshot(repositories, profileId);
+      return snapshot(repositories, profileId, runtime.now().slice(0, 10));
     }),
     post: (input: MovementInput) => unit.execute(async repositories => {
       assert(['INCOME', 'EXPENSE', 'DAILY', 'TRANSFER', 'ADJUSTMENT'].includes(input.kind), 'Operación no soportada');
@@ -109,7 +113,7 @@ export function createFinanceApplication(unit: UnitOfWork, runtime: Runtime) {
         else transaction = registerExpense(ctx, account, input.amountMinor, node, categoryId, balance, input.allowProtected);
       }
       await repositories.transactions.insert(transaction, fingerprint);
-      await snapshot(repositories, input.profileId);
+      await snapshot(repositories, input.profileId, runtime.now().slice(0, 10));
       return transaction;
     }),
     reverse: (input: BaseInput & { originalId: string }) => unit.execute(async repositories => {
@@ -120,6 +124,7 @@ export function createFinanceApplication(unit: UnitOfWork, runtime: Runtime) {
       if (previous) { assert(previous.fingerprint === fingerprint, 'Clave de reverso reutilizada'); return previous.transaction; }
       const original = await repositories.transactions.find(input.profileId, input.originalId);
       assert(original !== undefined, 'Movimiento inexistente en este perfil');
+      assert(!(await repositories.cards.related(input.profileId, input.originalId)), 'Usa Tarjetas para revertir compras; reverso de pagos fuera de V1');
       assert(!(await repositories.transactions.reversedBy(input.profileId, input.originalId)), 'El movimiento ya fue revertido');
       const reversal = reverseTransaction(context(input), original);
       const entries = await repositories.ledger.entries(input.profileId);
@@ -130,7 +135,7 @@ export function createFinanceApplication(unit: UnitOfWork, runtime: Runtime) {
         assert(after >= 0 || after >= before, 'El reverso dejaría una cuenta sin fondos suficientes');
       }
       await repositories.transactions.insert(reversal, fingerprint);
-      await snapshot(repositories, input.profileId);
+      await snapshot(repositories, input.profileId, runtime.now().slice(0, 10));
       return reversal;
     }),
     splitExpense: (profileId: string, originalId: string, splits: Split[]) => unit.execute(async repositories => {
@@ -147,7 +152,7 @@ export function createFinanceApplication(unit: UnitOfWork, runtime: Runtime) {
       if (existing.length) {
         const seeded = await Promise.all(['bank', 'saving', 'secondary'].map(key => repositories.accounts.byCreationKey(profileId, `dev-${key}`)));
         assert(seeded.every(Boolean), 'Los datos de ejemplo solo se cargan en un perfil vacío');
-        return snapshot(repositories, profileId);
+        return snapshot(repositories, profileId, runtime.now().slice(0, 10));
       }
       const effectiveDate = runtime.now().slice(0, 10);
       for (const value of [
@@ -157,7 +162,7 @@ export function createFinanceApplication(unit: UnitOfWork, runtime: Runtime) {
       ] satisfies (Omit<CreateAccountInput, 'profileId' | 'currency' | 'effectiveDate' | 'idempotencyKey'> & { key: string })[]) {
         await createAccount(repositories, { ...value, profileId, currency: 'USD', effectiveDate, idempotencyKey: `dev-${value.key}` });
       }
-      return snapshot(repositories, profileId);
+      return snapshot(repositories, profileId, runtime.now().slice(0, 10));
     }),
     close: () => unit.close(),
   };

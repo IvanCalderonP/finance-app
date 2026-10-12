@@ -102,7 +102,7 @@ test('posted entries are immutable and posting unbalanced ledger is blocked by S
 }));
 test('migration is reproducible; no editable balance column exists',()=>fixture(async({app,path,create})=>{
  await create('Bank',100);await app.close();const db=adapter(path);await migrateFinance(db,runtime.now());await migrateFinance(db,runtime.now());
- assert.equal((await db.all('SELECT COUNT(*) AS n FROM schema_migrations'))[0].n,1);
+ assert.equal((await db.all('SELECT COUNT(*) AS n FROM schema_migrations'))[0].n,2);
  assert.ok((await db.all('PRAGMA table_info(accounts)')).every(row=>!row.name.includes('balance')));await db.close();
 }));
 test('protected and inactive accounts retain wealth; cross-currency transfer fails',()=>fixture(async({app,profile,create,input})=>{
@@ -130,4 +130,32 @@ test('reversal after optional expense breakdown keeps total and entries correct'
  await app.reverse({profileId:profile.id,originalId:tx.id,effectiveDate:day,description:'Correct aggregate',idempotencyKey:randomUUID()});
  const final=await app.snapshot(profile.id);assert.equal(usd(final).expenseMinor,0);assert.equal(usd(final).physicalMinor,120000);assert.equal(final.transactions.length,3);
  await assert.rejects(app.splitExpense(profile.id,tx.id,[{categoryId:data.categories[0].id,amountMinor:5000}]));
+}));
+test('Phase A: complete core validation sequence, restart, transfer, reversal and duplicates',()=>fixture(async({app,profile,create,input})=>{
+ assert.equal((await app.initialProfile()).id,profile.id);
+ const bank=await create('Banco validación',120000);
+ let data=await app.snapshot(profile.id);
+ const income=input('INCOME',bank.id,100000,{categoryId:data.categories.find(row=>row.kind==='INCOME').id});
+ const expense=input('EXPENSE',bank.id,2000,{categoryId:data.categories.find(row=>row.name==='Comida').id});
+ const daily=input('DAILY',bank.id,5000);
+ await app.post(income);const original=await app.post(expense);await app.post(daily);
+ data=await app.snapshot(profile.id);
+ assert.equal(data.accounts.find(row=>row.account.id===bank.id).balanceMinor,213000);
+ assert.equal(usd(data).physicalMinor,213000);assert.equal(usd(data).availableMinor,213000);
+ const persisted=data;await app.close();
+ assert.deepEqual(await app.snapshot(profile.id),persisted);
+ const secondary=await create('Secundaria validación',0);
+ const transfer=input('TRANSFER',bank.id,5000,{toAccountId:secondary.id});await app.post(transfer);
+ data=await app.snapshot(profile.id);
+ assert.equal(data.accounts.find(row=>row.account.id===bank.id).balanceMinor,208000);
+ assert.equal(data.accounts.find(row=>row.account.id===secondary.id).balanceMinor,5000);
+ const reverse={profileId:profile.id,originalId:original.id,effectiveDate:day,description:'Validación de reverso',idempotencyKey:randomUUID()};
+ await app.reverse(reverse);
+ await app.post(income);await app.post(expense);await app.post(daily);await app.post(transfer);await app.reverse(reverse);
+ data=await app.snapshot(profile.id);
+ assert.equal(data.accounts.find(row=>row.account.id===bank.id).balanceMinor,210000);
+ assert.equal(data.accounts.find(row=>row.account.id===secondary.id).balanceMinor,5000);
+ assert.equal(usd(data).physicalMinor,215000);assert.equal(usd(data).availableMinor,215000);
+ assert.equal(usd(data).incomeMinor,100000);assert.equal(usd(data).expenseMinor,5000);
+ assert.equal(data.transactions.length,6);assert.ok(data.accounts.every(row=>row.account.type!=='cash'));
 }));

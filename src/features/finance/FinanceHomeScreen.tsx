@@ -1,5 +1,5 @@
-import { Link } from 'expo-router';
-import { useEffect, useRef, useState } from 'react';
+import { Link, useFocusEffect } from 'expo-router';
+import { useCallback, useRef, useState } from 'react';
 import { Button, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 import { finance, newOperationKey } from '@/services/finance/runtime';
 import type { FinanceSnapshot, MovementInput } from '@/services/finance/application';
@@ -42,7 +42,7 @@ export default function FinanceHomeScreen() {
   const [original, setOriginal] = useState<Transaction>();
   const operationKey = useRef<string | null>(null);
 
-  useEffect(() => {
+  useFocusEffect(useCallback(() => {
     let mounted = true;
     void finance.initialProfile().then(async profile => {
       const result = await finance.snapshot(profile.id);
@@ -50,7 +50,7 @@ export default function FinanceHomeScreen() {
     }).catch(() => { if (mounted) setError('No se pudo abrir la base local. Reinicia la app para reintentar.'); })
       .finally(() => { if (mounted) setBusy(false); });
     return () => { mounted = false; };
-  }, []);
+  }, []));
   async function perform(action: () => Promise<unknown>) {
     if (guard.current) return;
     guard.current = true; setBusy(true); setError('');
@@ -98,7 +98,8 @@ export default function FinanceHomeScreen() {
       {!data?.totals.length && <Text>Sin cuentas. Crea una o carga datos sintéticos para probar.</Text>}
       {data?.totals.map(total => <View key={total.currency} style={styles.card}>
         <Text style={styles.heading}>Disponible real: {formatAmountMinor(total.availableMinor, total.currency)}</Text>
-        <Text>Saldo total: {formatAmountMinor(total.physicalMinor, total.currency)}</Text>
+        <Text>Saldo físico: {formatAmountMinor(total.physicalMinor, total.currency)}</Text>
+        <Text>Tarjetas pendientes: {formatAmountMinor(total.cardDebtMinor, total.currency)}</Text>
         <Text>Patrimonio actual: {formatAmountMinor(total.netWorthMinor, total.currency)}</Text>
       </View>)}
       <View style={styles.row}>
@@ -142,8 +143,9 @@ export default function FinanceHomeScreen() {
         <Text>{transaction.effectiveDate} · {transaction.subtype === 'daily' && transaction.type === 'EXPENSE' ? 'Gastos diarios' : transaction.type}</Text>
         <Text>{formatAmountMinor(transaction.entries.reduce((sum, entry) => sum + entry.debitMinor, 0), transaction.currency)}{transaction.description ? ` · ${transaction.description}` : ''}</Text>
         {transaction.splits.map(split => <Text key={split.categoryId}>{data.categories.find(row => row.id === split.categoryId)?.name}: {formatAmountMinor(split.amountMinor, transaction.currency)}</Text>)}
-        {transaction.type !== 'REVERSAL' && <Button title={reversedIds.has(transaction.id) ? 'Revertido' : 'Revertir'} disabled={busy || reversedIds.has(transaction.id)} onPress={() => begin('REVERSAL', transaction)} />}
+        {transaction.type !== 'REVERSAL' && !transaction.entries.some(entry => data?.cards.some(row => row.card.nodeId === entry.nodeId)) && <Button title={reversedIds.has(transaction.id) ? 'Revertido' : 'Revertir'} disabled={busy || reversedIds.has(transaction.id)} onPress={() => begin('REVERSAL', transaction)} />}
       </View>)}
+      <Link href="/cards">Tarjetas</Link>
       <Link href="/storage-lab">Laboratorio sintético de almacenamiento</Link>
     </ScrollView>
   );

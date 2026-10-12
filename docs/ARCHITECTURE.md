@@ -80,3 +80,9 @@ Motor testeable sin React ni dispositivo; escritura atómica e idempotente; reco
 Base finance-storage-lab-v1.db, sin tablas financieras, datos reales, cifrado ni cloud. Migración técnica V1 con lab_parents/lab_samples y PRAGMA user_version. Pantalla /storage-lab únicamente para diagnóstico. Adaptador Expo SQLite y núcleo SQL testeable con SQLite de Node (evidencia técnica auxiliar, no equivalente a runtime Android/Web). Migración y apertura no insertan datos: esto evita confundir resembrado con persistencia. Exportación/importación JSON limitada a filas sintéticas conocidas.
 
 Web es una prueba independiente, no aprobación de confiabilidad. Habilitar WASM y cabeceras de aislamiento para el ensayo, sin implementar aún caché/PWA ni afirmar arranque offline. No hay fallback remoto a Supabase. Admin permanece solo documentado. Ver STORAGE_TECHNICAL_REPORT.md para resultados y límites de evidencia.
+
+## Tarjetas V1
+
+Motor puro cards.ts, servicio card-application.ts y repositorio SQLite separado, compartiendo la misma conexión privada y cola del núcleo. Asientos, clasificación de ciclos, pagos y aplicaciones se confirman en una sola transacción. Inicio incluye deuda y disponible; /cards ofrece operaciones mínimas. Sin dependencias nuevas. Android del núcleo confirmado por el usuario («no si quedo sigue»); no fue observado directamente por el agente. Los tests usan SQLite de Node y datos sintéticos; no sustituyen la prueba física de la nueva pantalla. Web continúa como evaluación separada.
+
+Validación automatizada: 72/72 tests (27 nuevos de tarjetas), TypeScript y lint correctos, Expo Doctor 21/21. Exportación Android Hermes y web completada; /cards respondió HTTP 200. Esto verifica empaquetado, no ejecución física de tarjetas ni persistencia SQLite web. La pantalla nueva requiere comprobación en Expo Go por el usuario.
