@@ -1,3 +1,4 @@
+import { Link } from 'expo-router';
 import { StyleSheet, Text, View } from 'react-native';
 
 export default function HomeScreen() {
@@ -5,6 +6,7 @@ export default function HomeScreen() {
     <View style={styles.container}>
       <Text style={styles.title}>Finance App</Text>
       <Text style={styles.message}>Proyecto configurado correctamente</Text>
+      <Link href="/storage-lab" style={styles.message}>Abrir prueba técnica SQLite (solo datos sintéticos)</Link>
     </View>
   );
 }

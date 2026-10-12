@@ -41,3 +41,14 @@ npm audit informa 29 vulnerabilidades (11 moderadas, 18 altas) en dependencias d
 ## Validación inicial
 
 TypeScript y lint pasaron. Expo Doctor completó 21/21 comprobaciones. El comando npx expo start inició en modo Expo Go; la respuesta web contiene los dos textos solicitados, la exportación web terminó correctamente y Metro generó el bundle Android. No se probó la apertura en un teléfono físico. El servidor de comprobación se detuvo al finalizar.
+
+## Fase 2 — laboratorio SQLite (solo datos sintéticos)
+
+```sh
+npx expo start --clear
+npm run test:storage
+```
+
+Abre «Abrir prueba técnica SQLite» desde Inicio. Usa únicamente las muestras fijas del laboratorio. Si tienes Metro abierto, detenlo y reinícialo: la configuración WASM y la importación diferida de SQLite deben recargarse. No desactives lazy bundling ni uses EXPO_NO_METRO_LAZY=1: el worker necesita el mapa de bundles. La prueba web es independiente de Android.
+
+Resultados, pasos de cierre completo, archivos y límites de evidencia: [docs/STORAGE_TECHNICAL_REPORT.md](docs/STORAGE_TECHNICAL_REPORT.md). Once tests técnicos pasaron; Las cuatro pruebas básicas en Android fueron confirmadas por el usuario; persistencia y restauración reales en navegador siguen pendientes de verificación. No almacenar datos financieros reales sin cifrado.
