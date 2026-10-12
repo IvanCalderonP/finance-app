@@ -41,3 +41,46 @@ example
 # generated native folders
 /ios
 /android
+
+# Secrets and credentials
+.env
+.env.*
+!.env.example
+credentials.json
+service-account*.json
+serviceAccount*.json
+secrets/
+credentials/
+*.keystore
+*.pfx
+*.crt
+*.cer
+
+# Local databases and SQLite journals
+*.db
+*.db-*
+*.sqlite
+*.sqlite-*
+*.sqlite3
+*.sqlite3-*
+
+# Local user backups
+backups/
+local-backups/
+user-backups/
+*.backup
+*.bak
+
+# Builds, caches and temporary files
+build/
+coverage/
+.cache/
+.eslintcache
+tmp/
+temp/
+*.tmp
+*.temp
+*.log
+*.swp
+*.swo
+*~

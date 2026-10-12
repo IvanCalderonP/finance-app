@@ -1,56 +1,43 @@
-# Welcome to your Expo app 👋
+# Finance App
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+Proyecto inicial de finanzas personales con React Native, Expo SDK 57, TypeScript y Expo Router. Solo incluye la pantalla de comprobación.
 
-## Get started
+## Ejecutar
 
-1. Install dependencies
+Desde /home/ivancalderon/Escritorio/proyectosRepo:
 
-   ```bash
-   npm install
-   ```
-
-2. Start the app
-
-   ```bash
-   npx expo start
-   ```
-
-In the output, you'll find options to open the app in a
-
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
-
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
-
-## Get a fresh project
-
-When you're ready, run:
-
-```bash
-npm run reset-project
+```sh
+cd finance-app
+npm install
+npx expo start
 ```
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+Android: abre Expo Go y escanea el QR con teléfono y computadora conectados a la misma red Wi-Fi. Expo Go debe ser compatible con SDK 57.
 
-### Other setup steps
+Web: presiona `w` en la terminal de Expo y abre la dirección indicada en el navegador.
 
-- To set up ESLint for linting, run `npx expo lint`, or follow our guide on ["Using ESLint and Prettier"](https://docs.expo.dev/guides/using-eslint/)
-- If you'd like to set up unit testing, follow our guide on ["Unit Testing with Jest"](https://docs.expo.dev/develop/unit-testing/)
-- Learn more about the TypeScript setup in this template in our guide on ["Using TypeScript"](https://docs.expo.dev/guides/typescript/)
+## Comprobaciones
 
-## Learn more
+```sh
+npm run typecheck
+npm run lint
+npx expo-doctor
+```
 
-To learn more about developing your project with Expo, look at the following resources:
+## Estructura
 
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
+Las rutas están en `src/app/`. Las carpetas `features`, `components`, `financial-engine`, `database`, `services`, `hooks`, `store`, `utils` y `types` dentro de `src/` quedan reservadas para el desarrollo futuro. Los seis documentos en `docs/` deben completarse antes de implementar sus módulos.
 
-## Join the community
+Git está inicializado dentro de este proyecto. No se han implementado funciones financieras ni instalado las dependencias aplazadas.
 
-Join our community of developers creating universal apps.
+## Entorno e instalación
 
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+Node 24.21.0, npm/npx 11.19.0, Git 2.54.0. No se cambió Node ni se instaló software del sistema. Se conservaron las dependencias del template default y se añadieron ESLint y eslint-config-expo para lint. Las versiones exactas están en package-lock.json.
+
+Las instalaciones secundarias iniciadas por npx propagan la opción global allow-scripts, incompatible con npm 11.19.0. Para la preparación se utilizó una configuración de usuario temporal, sin modificar la global. npm install directo funciona normalmente.
+
+npm audit informa 29 vulnerabilidades (11 moderadas, 18 altas) en dependencias del template. Las soluciones automáticas propuestas cambian versiones incompatibles con SDK 57, por lo que no se aplicó audit fix --force. Quedan pendientes de una actualización compatible antes de publicar o usar datos reales.
+
+## Validación inicial
+
+TypeScript y lint pasaron. Expo Doctor completó 21/21 comprobaciones. El comando npx expo start inició en modo Expo Go; la respuesta web contiene los dos textos solicitados, la exportación web terminó correctamente y Metro generó el bundle Android. No se probó la apertura en un teléfono físico. El servidor de comprobación se detuvo al finalizar.
