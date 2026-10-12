@@ -1,6 +1,6 @@
 # Modelo de datos local propuesto
 
-Propósito: definir el esquema lógico antes de migraciones. Estado: modelo financiero propuesto con decisiones V1 aprobadas; no existen aún tablas ni migraciones financieras. La fase 2 crea únicamente una base técnica separada. SQLite local es la fuente financiera. Supabase no contiene estas tablas financieras.
+Propósito: definir el esquema lógico antes de migraciones. Estado: modelo financiero propuesto con decisiones V1 aprobadas; existe una primera migración financiera limitada al núcleo mínimo. La fase 2 crea únicamente una base técnica separada. SQLite local es la fuente financiera. Supabase no contiene estas tablas financieras.
 
 ## Convenciones
 
@@ -100,10 +100,16 @@ Backups deben incluir todas las tablas canónicas y relaciones, configuración f
 
 ## Pendiente
 
-Antes de migraciones: convertir este modelo lógico en SQL con constraints concretos, resolver destinos polimórficos mediante FKs reales, definir firmas de repositorios, decidir alcance de otras monedas y evaluar persistencia web. Probar transacciones, reconstrucción y restauración en cada plataforma. Ninguna tabla financiera descrita está implementada.
+Antes de migraciones: convertir este modelo lógico en SQL con constraints concretos, resolver destinos polimórficos mediante FKs reales, definir firmas de repositorios, decidir alcance de otras monedas y evaluar persistencia web. Probar transacciones, reconstrucción y restauración en cada plataforma. Solo las tablas del núcleo mínimo indicadas abajo están implementadas; las demás siguen como propuesta.
 
 ## Esquema técnico implementado en fase 2
 
 En base separada finance-storage-lab-v1.db: lab_parents(id limitado a lab-demo, tag SYNTHETIC) y lab_samples(id limitado a lab-seed/lab-persist/lab-probe, parent_id FK RESTRICT, value INTEGER entre 0 y 1000000, tag SYNTHETIC). No importes monetarios, personas, notas ni datos reales. user_version=1 se confirma en la misma transacción de creación; versiones futuras se rechazan. foreign_keys se habilita y verifica en cada conexión.
 
 Solo una instancia de laboratorio posee la conexión y serializa lectura/escritura/close/export/restore. BEGIN IMMEDIATE/COMMIT/ROLLBACK explícitos en conexión privada, sin dependencia de withExclusiveTransactionAsync (no disponible en web). Concurrencia entre pestañas todavía requiere validación y no se declara resuelta. Migración no siembra datos.
+
+## Núcleo financiero implementado
+
+Base finance-local-v1.db, separada del laboratorio. Migración 001: profiles, accounts, ledger_nodes, transactions, transaction_entries, transaction_splits, categories y schema_migrations. Saldo derivado únicamente de entradas POSTED. Perfil LOCAL y categorías iniciales automáticos; ninguna cuenta o movimiento se siembra sin acción explícita.
+
+Retiro cotidiano = EXPENSE/daily, no transferencia ni creación de cash. Cash es un tipo opcional de cuenta. Se conservan los asientos confirmados y se crean reversos referenciados; los splits de gastos pueden reemplazarse atómicamente sin asientos nuevos. Restricciones compuestas por perfil/moneda, índices, posting equilibrado e inmutabilidad de entries. No existe columna editable de saldo. UUID se generan en infraestructura, no en el motor.

@@ -1,6 +1,6 @@
 # Finance App
 
-Proyecto inicial de finanzas personales con React Native, Expo SDK 57, TypeScript y Expo Router. Solo incluye la pantalla de comprobación.
+Proyecto inicial de finanzas personales con React Native, Expo SDK 57, TypeScript y Expo Router. Incluye el núcleo local mínimo y una UI funcional de validación.
 
 ## Ejecutar
 
@@ -52,3 +52,19 @@ npm run test:storage
 Abre «Abrir prueba técnica SQLite» desde Inicio. Usa únicamente las muestras fijas del laboratorio. Si tienes Metro abierto, detenlo y reinícialo: la configuración WASM y la importación diferida de SQLite deben recargarse. No desactives lazy bundling ni uses EXPO_NO_METRO_LAZY=1: el worker necesita el mapa de bundles. La prueba web es independiente de Android.
 
 Resultados, pasos de cierre completo, archivos y límites de evidencia: [docs/STORAGE_TECHNICAL_REPORT.md](docs/STORAGE_TECHNICAL_REPORT.md). Once tests técnicos pasaron; Las cuatro pruebas básicas en Android fueron confirmadas por el usuario; persistencia y restauración reales en navegador siguen pendientes de verificación. No almacenar datos financieros reales sin cifrado.
+
+## Núcleo financiero mínimo
+
+Base separada finance-local-v1.db; el perfil LOCAL se crea sin login. Crea cuentas o pulsa Cargar datos sintéticos en un perfil vacío (Banco 1200, Ahorro protegido 200, Secundaria 100; sin cash). El saldo total inicial del ejemplo es USD 1500 y el disponible USD 1300. Gastos diarios 50 desde Banco deja Banco 1150, total 1450 y disponible 1250; no crea efectivo. Una transferencia a cash solo existe si creas esa cuenta opcional.
+
+```sh
+npm run typecheck
+npm run lint
+npm test
+npm run test:finance
+npx expo start --clear
+```
+
+El motor en src/financial-engine no depende de React/Expo/SQLite. Los casos de uso y contratos están en src/services/finance y el adaptador/migración/repositorios en src/database/finance. SQL parametrizado y relaciones por perfil. Los movimientos confirmados se corrigen por reverso; la clasificación de un gasto puede reemplazarse desde el caso de uso splitExpense sin alterar asientos. La UI todavía no ofrece un editor avanzado de desgloses.
+
+Disponible parcial: solo cuentas y política free/protected; TC, recibos, metas y deudas no participan. Formularios V1: USD/EUR con dos decimales, sin conversión entre monedas. Apertura/ajuste no son ingreso/gasto; ajustes y reversos requieren motivo. No hay cifrado, Auth, Supabase ni cloud. Los tests de integración usan SQLite real de Node y el mismo código de repositorios, pero no sustituyen las pruebas de UI y reinicio de este núcleo en Expo Go. La aprobación Android anterior corresponde al laboratorio técnico.

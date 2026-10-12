@@ -1,6 +1,6 @@
 # Funcionalidades, navegación y fases
 
-Propósito: definir alcance sin construir todavía las funciones. Estado: propuesta v1. La pantalla actual es solo una comprobación técnica.
+Propósito: definir alcance sin construir todavía las funciones. Estado: propuesta v1. La pantalla actual incluye una UI mínima del núcleo financiero, sin diseño definitivo.
 
 ## Navegación propuesta
 
@@ -56,3 +56,7 @@ Fase activa: únicamente fase 2. Datos sintéticos, migración técnica mínima,
 ## Riesgos principales
 
 Doble conteo por reservas/deudas/ciclos/metas; movimientos duplicados; cambios retroactivos; respaldo insuficiente; pérdida de SQLite/navegador; diferencias web/nativo; pérdida de llave; recordatorios limitados por OS; acceso offline no equivale a autorización cloud; restauración de una versión futura; backups manuales no son sincronización. Criterios de prueba y mitigaciones constan en los documentos específicos.
+
+## Flujo principal implementado
+
+Inicio ofrece Ingreso, Gasto, Gastos diarios y Transferir, además de crear cuentas. Gastos diarios registra un agregado desde banco bajo Gastos cotidianos, sin pedir remanente de efectivo. Transferir a efectivo requiere una cuenta cash creada expresamente. El seed de desarrollo contiene banco, ahorro protegido y secundaria, sin efectivo; es opcional y no se ejecuta al reiniciar. Tarjetas y los demás módulos avanzados no están implementados.

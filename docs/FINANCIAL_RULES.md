@@ -1,6 +1,6 @@
 # Reglas financieras y casos de prueba
 
-Propósito: establecer invariantes de negocio y evitar doble conteo. Estado: arquitectura general y decisiones V1 aprobadas el 2026-10-12; los puntos aún no resueltos se identifican como propuestas. Sin implementación financiera.
+Propósito: establecer invariantes de negocio y evitar doble conteo. Estado: arquitectura general y decisiones V1 aprobadas el 2026-10-12; los puntos aún no resueltos se identifican como propuestas. El núcleo local mínimo ya implementa cuentas, ledger e ingresos/gastos/transferencias; los módulos avanzados siguen pendientes.
 
 ## Magnitudes por moneda
 
@@ -100,3 +100,9 @@ Casos a cerrar: meses de 28/29/30/31 días (último día válido aprobado), sin 
 | Repetir recurrencia/restauración; cambio de fecha | Sin instancias duplicadas ni acumulación de saldos |
 
 Añadir pruebas de propiedades: transferencias conservan patrimonio; liquidar principal conserva D; reconstrucción igual a proyecciones; financiación exclusiva por unidad monetaria; ninguna asignación crea dinero. Estas reglas preceden a implementación y UI final.
+
+## Regla implementada del flujo principal
+
+Retiro para gastos cotidianos se registra como EXPENSE/subtype daily: banco disminuye, categoría Gastos cotidianos aumenta y no se crea efectivo. El perfil LOCAL y la carga de desarrollo no crean cuentas cash. La transferencia a una cuenta cash que el usuario cree explícitamente sigue siendo TRANSFER, sin ingreso/gasto. Desglosar un gasto sustituye sus líneas de categoría; conserva transaction_entries y el importe total. Un reverso posterior usa las categorías actuales y sus importes opuestos.
+
+Disponible parcial de esta fase: suma de cuentas menos los saldos positivos protected; los saldos negativos siguen visibles como déficit. No hay compromisos ficticios. El cálculo admite proyecciones futuras con identidad y porción ya excluida para evitar doble descuento; hoy recibe una lista vacía. Transferir free→protected conserva patrimonio y reduce disponible. Los reversos que empeoran una cuenta por debajo de cero se rechazan; ajustes con motivo permiten conciliación explícita.
