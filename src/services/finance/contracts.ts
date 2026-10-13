@@ -1,3 +1,4 @@
+import type { DebtRepository } from './debt-contracts.ts';
 import type { CreditCardRepository } from './card-contracts.ts';
 import type { Account, Category, Entry, LedgerNode, Profile, Split, Transaction } from '../../financial-engine/model.ts';
 export interface AccountRepository {
@@ -22,7 +23,7 @@ export interface LedgerRepository {
 }
 export interface CategoryRepository { list(profileId: string): Promise<Category[]> }
 export interface Repositories {
-  cards: CreditCardRepository;
+  cards: CreditCardRepository; debts: DebtRepository;
   accounts: AccountRepository; transactions: TransactionRepository; ledger: LedgerRepository; categories: CategoryRepository;
   profiles: { initial(): Promise<Profile> };
 }

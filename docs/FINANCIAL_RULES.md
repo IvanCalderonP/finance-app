@@ -105,7 +105,7 @@ Añadir pruebas de propiedades: transferencias conservan patrimonio; liquidar pr
 
 Retiro para gastos cotidianos se registra como EXPENSE/subtype daily: banco disminuye, categoría Gastos cotidianos aumenta y no se crea efectivo. El perfil LOCAL y la carga de desarrollo no crean cuentas cash. La transferencia a una cuenta cash que el usuario cree explícitamente sigue siendo TRANSFER, sin ingreso/gasto. Desglosar un gasto sustituye sus líneas de categoría; conserva transaction_entries y el importe total. Un reverso posterior usa las categorías actuales y sus importes opuestos.
 
-Disponible parcial de esta fase: suma de cuentas menos los saldos positivos protected; los saldos negativos siguen visibles como déficit. No hay compromisos ficticios. El cálculo admite proyecciones futuras con identidad y porción ya excluida para evitar doble descuento; hoy recibe una lista vacía. Transferir free→protected conserva patrimonio y reduce disponible. Los reversos que empeoran una cuenta por debajo de cero se rechazan; ajustes con motivo permiten conciliación explícita.
+Disponible real: suma de cuentas menos saldos positivos protected y pasivos pendientes de TC y deudas personales; los saldos negativos siguen visibles como déficit. Los compromisos poseen identidad y porción ya excluida para evitar doble descuento al financiar reservas futuras. Transferir free→protected conserva patrimonio y reduce disponible. Los reversos que empeoran una cuenta por debajo de cero se rechazan; ajustes con motivo permiten conciliación explícita.
 
 ## Tarjetas V1 implementadas
 
@@ -114,3 +114,9 @@ Disponible real resta una vez la deuda total de tarjetas por moneda; patrimonio 
 Corte inclusivo por effective_date; días inexistentes se ajustan al último del mes. Vencimiento: primera ocurrencia del día configurado estrictamente posterior al corte, sin ajustes de feriados. Saldo al último corte es la deuda histórica del ledger hasta esa fecha; el pendiente de cada ciclo usa su clasificación actual. Corregir clasificación no altera fecha efectiva, saldo histórico, deuda ni gasto. Pagos se aplican FIFO por fecha de corte; el desglose se reconstruye atómicamente al registrar datos retroactivos, corregir ciclo o revertir compra.
 
 Reverso total conserva compra y asientos opuestos. V1 rechaza el reverso que dejaría saldo acreedor (por ejemplo compra ya pagada sin otra deuda); ese flujo, refund parcial y reverso de pagos requieren la siguiente extensión. Deuda inicial superior al límite puede representar deuda existente: se muestra crédito disponible negativo y se bloquean nuevas compras.
+
+## Deudas personales V1 implementadas
+
+Préstamo entregado: débito a cuenta por cobrar y crédito al banco; no gasto. Cobro de principal: débito al banco y crédito a la cuenta por cobrar; no ingreso. Obligación existente: apertura contra patrimonio, sin gasto actual. Préstamo recibido: banco aumenta junto con pasivo; no ingreso. Compra financiada: gasto y pasivo nacen en una sola transacción; el pago posterior liquida principal sin nuevo gasto.
+
+Disponible real resta únicamente pasivos personales pendientes, junto con TC, y nunca agrega cuentas por cobrar. Patrimonio total suma principal por cobrar y resta pasivos; patrimonio sin por cobrar lo excluye. Los saldos provienen de asientos POSTED; estado pagada exige pendiente cero y vencida exige fecha pasada y saldo positivo; la reversión del origen muestra anulada, no pagada. Reversos conservan el historial y se bloquean si sus efectos dejan saldos imposibles o un banco sin fondos. Intereses y comisiones se registran manualmente como gastos categorizados desde Inicio, separados del principal; cálculo automático fuera de V1.

@@ -69,11 +69,11 @@ Una base por perfil local; el perfil LOCAL no necesita user_id remoto. Asociar u
 
 ## Decisiones pendientes antes de implementar
 
-Quedan pendientes ventana de gastos hormiga, tratamiento de intereses/comisiones/reembolsos, deuda inicial y gastos históricos, edición retroactiva, llaves de recuperación y equivalencia de seguridad en web. Están aprobados free/protected por cuenta sin doble descuento, presupuesto separado de apartado, dos operaciones de efectivo, ambos patrimonios con/sin por cobrar, corte inclusivo por effective_date y último día válido, corrección manual sin repetir asientos y reservas liberables con confirmación. Las propuestas restantes están en los demás documentos; no son funcionalidades existentes.
+Quedan pendientes ventana de gastos hormiga, automatización de intereses/comisiones, reembolsos parciales, edición retroactiva general, llaves de recuperación y equivalencia de seguridad en web. Están aprobados free/protected por cuenta sin doble descuento, presupuesto separado de apartado, dos operaciones de efectivo, ambos patrimonios con/sin por cobrar, corte inclusivo por effective_date y último día válido, corrección manual sin repetir asientos y reservas liberables con confirmación. Las propuestas restantes están en los demás documentos; no son funcionalidades existentes.
 
 ## Criterios de aceptación de arquitectura
 
-Motor testeable sin React ni dispositivo; escritura atómica e idempotente; reconstrucción determinista de saldos; operaciones principales sin red ni sesión; ningún dato financiero en admin/telemetría; restauración validada sin pérdida del perfil anterior; pruebas reales de persistencia y offline por plataforma. No implementar módulos hasta cerrar sus reglas y contratos.
+Motor testeable sin React ni dispositivo; escritura atómica e idempotente; reconstrucción determinista de saldos; operaciones principales sin red ni sesión; ningún dato financiero en admin/telemetría; restauración validada sin pérdida del perfil anterior; pruebas reales de persistencia y offline por plataforma. Implementar cada módulo solo con reglas y contratos definidos.
 
 ## Fase 2 autorizada: laboratorio separado
 
@@ -83,6 +83,10 @@ Web es una prueba independiente, no aprobación de confiabilidad. Habilitar WASM
 
 ## Tarjetas V1
 
-Motor puro cards.ts, servicio card-application.ts y repositorio SQLite separado, compartiendo la misma conexión privada y cola del núcleo. Asientos, clasificación de ciclos, pagos y aplicaciones se confirman en una sola transacción. Inicio incluye deuda y disponible; /cards ofrece operaciones mínimas. Sin dependencias nuevas. Android del núcleo confirmado por el usuario («no si quedo sigue»); no fue observado directamente por el agente. Los tests usan SQLite de Node y datos sintéticos; no sustituyen la prueba física de la nueva pantalla. Web continúa como evaluación separada.
+Motor puro cards.ts, servicio card-application.ts y repositorio SQLite separado, compartiendo la misma conexión privada y cola del núcleo. Asientos, clasificación de ciclos, pagos y aplicaciones se confirman en una sola transacción. Inicio incluye deuda y disponible; /cards ofrece operaciones mínimas. Sin dependencias nuevas. Android del núcleo confirmado por el usuario («no si quedo sigue»); no fue observado directamente por el agente. Los tests usan SQLite de Node y datos sintéticos. El usuario confirmó en Expo Go Android la creación de tarjeta, compra, pago parcial y persistencia tras cerrar y reabrir. Web continúa como evaluación separada.
 
-Validación automatizada: 72/72 tests (27 nuevos de tarjetas), TypeScript y lint correctos, Expo Doctor 21/21. Exportación Android Hermes y web completada; /cards respondió HTTP 200. Esto verifica empaquetado, no ejecución física de tarjetas ni persistencia SQLite web. La pantalla nueva requiere comprobación en Expo Go por el usuario.
+Validación automatizada: 72/72 tests (27 nuevos de tarjetas), TypeScript y lint correctos, Expo Doctor 21/21. Exportación Android Hermes y web completada; /cards respondió HTTP 200. La exportación verifica empaquetado; la prueba física posterior de tarjetas fue confirmada por el usuario. La persistencia SQLite web requiere evaluación separada.
+
+## Deudas personales V1
+
+Motor puro `financial-engine/debts.ts`; servicio, proyecciones y repositorio SQLite separados, sobre la misma conexión y cola financiera. Inicio combina pasivos de TC y deudas como compromisos distintos y muestra cuentas por cobrar por separado. `/debts` ofrece dos pestañas y operaciones con datos sintéticos. Pruebas SQLite verifican idempotencia, reversos, rollback, perfiles y reapertura; exportación Android/web verifica empaquetado. La prueba física de tarjetas fue confirmada por el usuario en Expo Go; la UI de deudas aún no se ha probado en el dispositivo.

@@ -47,7 +47,7 @@
     "typecheck": "tsc --noEmit",
     "test:storage": "node --test tests/storage-lab.test.mjs",
     "test": "node --test tests/*.test.mjs",
-    "test:finance": "node --test tests/financial-engine.test.mjs tests/finance-sqlite.test.mjs"
+    "test:finance": "node --test tests/financial-engine.test.mjs tests/finance-sqlite.test.mjs tests/credit-cards.test.mjs tests/debts.test.mjs tests/demo.test.mjs"
   },
   "private": true
 }

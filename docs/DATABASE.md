@@ -85,7 +85,7 @@ Inicial es dato de origen; pendiente no se resta manualmente y por asientos a la
 | Tabla | Campos y restricciones propuestos |
 | --- | --- |
 | settings | key PK por perfil, value_json versionado; zona, moneda, preferencias, nunca llaves/tokens/PIN sin hash |
-| schema_migrations | version PK, applied_at; futura, sin migraciones implementadas |
+| schema_migrations | version PK, applied_at; migraciones 001–003 implementadas |
 | backup_metadata | id, format_version, schema_version, created_at, source(local/cloud), byte_size, checksum, status, opaque_remote_id nullable; sin llave ni payload |
 | account_balance_projection | account_id PK FK, balance_minor, last_revision; reconstruible desde asientos |
 | entitlement_cache | remote_user_id, cloud_backup_enabled, role, fetched_at, expires_at; solo informativo offline, no autorización de upload |
@@ -100,7 +100,7 @@ Backups deben incluir todas las tablas canónicas y relaciones, configuración f
 
 ## Pendiente
 
-Antes de migraciones: convertir este modelo lógico en SQL con constraints concretos, resolver destinos polimórficos mediante FKs reales, definir firmas de repositorios, decidir alcance de otras monedas y evaluar persistencia web. Probar transacciones, reconstrucción y restauración en cada plataforma. Solo las tablas del núcleo mínimo indicadas abajo están implementadas; las demás siguen como propuesta.
+Siguen pendientes los esquemas de presupuestos, recibos, metas y otros módulos propuestos, junto con la evaluación completa de persistencia web. Núcleo, tarjetas y deudas personales ya tienen migraciones y pruebas SQLite.
 
 ## Esquema técnico implementado en fase 2
 
@@ -117,3 +117,7 @@ Retiro cotidiano = EXPENSE/daily, no transferencia ni creación de cash. Cash es
 ## Tarjetas implementadas — migración 002
 
 Añade credit_cards, credit_card_cycles, credit_card_cycle_entries, credit_card_payments y credit_card_payment_applications; credit_card_cycle_corrections conserva motivo y ciclo anterior/nuevo. Pasivo LIABILITY: deuda = créditos − débitos POSTED. Apertura contra EQUITY, compra contra EXPENSE, pago contra ASSET; no hay saldo editable ni gasto al pagar. La base mantiene su nombre finance-local-v1.db y avanza a user_version=2. Reconstrucción de ledger_nodes según procedimiento SQLite, foreign_key_check antes de commit y foreign_keys reactivadas incluso ante fallo. No borra ni recrea los movimientos existentes.
+
+## Migración 003 — deudas personales
+
+`people`, `debts`, `debt_payments` y `debt_events`. La cuarta tabla enlaza cada movimiento y reverso con su deuda para reconstrucción y auditoría. `debts.initial_minor` es el principal histórico de origen, no el pendiente; `ledger_node_id` identifica ASSET para por cobrar o LIABILITY para por pagar. `origin_transaction_id` apunta al asiento de creación. No hay columna editable de pendiente ni estado. Pagos conservan cuenta, dirección y transacción; importe real se deriva de los asientos. `user_version=3`, migración atómica y `foreign_key_check` antes de confirmarla. Migraciones 001 y 002 mantienen sus datos.

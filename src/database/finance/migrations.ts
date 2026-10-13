@@ -1,3 +1,4 @@
+import { MIGRATION_003 } from './migration003.ts';
 import { MIGRATION_002 } from './migration002.ts';
 import { atomic } from './connection.ts';
 import type { SqlConnection } from './connection.ts';
@@ -86,7 +87,7 @@ export async function migrateFinance(db: SqlConnection, timestamp: string) {
   const fk = await db.all<{ foreign_keys: number }>('PRAGMA foreign_keys');
   assert(fk[0]?.foreign_keys === 1, 'No se pudieron activar las relaciones');
   const version = (await db.all<{ user_version: number }>('PRAGMA user_version'))[0].user_version;
-  assert(version <= 2, 'La base pertenece a una versión futura');
+  assert(version <= 3, 'La base pertenece a una versión futura');
   if (version === 0) await atomic(db, async () => {
     // Recheck after obtaining the writer lock, including another connection's migration.
     const current = (await db.all<{ user_version: number }>('PRAGMA user_version'))[0].user_version;
@@ -115,6 +116,18 @@ export async function migrateFinance(db: SqlConnection, timestamp: string) {
       await db.exec('PRAGMA foreign_keys=ON');
       assert((await db.all<{ foreign_keys: number }>('PRAGMA foreign_keys'))[0].foreign_keys === 1, 'Relaciones desactivadas');
     }
+  }
+
+  if ((await db.all<{ user_version: number }>('PRAGMA user_version'))[0].user_version < 3) {
+    await atomic(db, async () => {
+      const current = (await db.all<{ user_version: number }>('PRAGMA user_version'))[0].user_version;
+      if (current === 3) return;
+      assert(current === 2, 'Versión de migración inesperada');
+      await db.exec(MIGRATION_003);
+      assert((await db.all('PRAGMA foreign_key_check')).length === 0, 'Relaciones inválidas después de migrar deudas');
+      await db.run('INSERT INTO schema_migrations VALUES(?,?)', [3, timestamp]);
+      await db.exec('PRAGMA user_version=3');
+    });
   }
 
 }

@@ -49,9 +49,9 @@ Cada fase agrega tests de sus invariantes antes de ampliar funciones. No impleme
 
 ## Decisiones que requieren revisión
 
-Las decisiones V1 aprobadas son availability_policy free/protected sin duplicar metas/reservas, presupuesto sin descuento y apartado financiado con descuento, dos operaciones de efectivo, patrimonio con/sin por cobrar, ciclo por effective_date inclusivo con corrección manual, último día válido, sin ajustes por festivos y reserva liberable con confirmación. Siguen como propuestas: pago TC aplicado al ciclo más antiguo y porcentajes sobre ingreso original. No hay integración bancaria automática.
+Las decisiones V1 aprobadas son availability_policy free/protected sin duplicar metas/reservas, presupuesto sin descuento y apartado financiado con descuento, dos operaciones de efectivo, patrimonio con/sin por cobrar, ciclo por effective_date inclusivo con corrección manual, último día válido, sin ajustes por festivos y reserva liberable con confirmación. Pago TC se aplica al ciclo pendiente más antiguo; porcentajes sobre ingreso original siguen como propuesta. No hay integración bancaria automática.
 
-Fase activa: únicamente fase 2. Datos sintéticos, migración técnica mínima, diagnóstico, archivos JSON de prueba y evaluación separada de web. No iniciar fases 3–10 hasta una nueva instrucción.
+Fases implementadas: prueba técnica, núcleo financiero, tarjetas y deudas personales. Web continúa como evaluación separada; los demás módulos requieren nueva instrucción.
 
 ## Riesgos principales
 
@@ -59,8 +59,16 @@ Doble conteo por reservas/deudas/ciclos/metas; movimientos duplicados; cambios r
 
 ## Flujo principal implementado
 
-Inicio ofrece Ingreso, Gasto, Gastos diarios y Transferir, además de crear cuentas. Gastos diarios registra un agregado desde banco bajo Gastos cotidianos, sin pedir remanente de efectivo. Transferir a efectivo requiere una cuenta cash creada expresamente. El seed de desarrollo contiene banco, ahorro protegido y secundaria, sin efectivo; es opcional y no se ejecuta al reiniciar. Tarjetas y los demás módulos avanzados no están implementados.
+Inicio ofrece Ingreso, Gasto, Gastos diarios y Transferir, además de crear cuentas. Gastos diarios registra un agregado desde banco bajo Gastos cotidianos, sin pedir remanente de efectivo. Transferir a efectivo requiere una cuenta cash creada expresamente. El seed de desarrollo contiene banco, ahorro protegido y secundaria, sin efectivo; es opcional y no se ejecuta al reiniciar. Tarjetas y deudas personales tienen secciones propias; los demás módulos avanzados siguen pendientes.
 
 ## Tarjetas V1 disponibles
 
 Crear con deuda inicial, comprar con categorías compartidas, pago parcial/total, reverso total y corrección de ciclo con motivo. Lista, detalle, ciclos y desglose de pagos en /cards; Inicio muestra saldo físico, disponible real y deuda de tarjetas. UI provisional, únicamente datos sintéticos mientras no exista cifrado. Otros módulos permanecen pendientes.
+
+## Deudas personales V1 disponibles
+
+Personas manuales, ME DEBEN (préstamo y cobro), YO DEBO (obligación existente, préstamo recibido, compra financiada y pago), pagos parciales/totales, vencimiento/estado derivado e historial con reversos seguros. Inicio muestra Disponible real, saldo físico, TC, YO DEBO, ME DEBEN y dos vistas de patrimonio. UI provisional.
+
+## Interfaz para revisión
+
+Navegación inferior con Inicio, Cuentas, Movimientos, Tarjetas y Deudas. Diseño verde/crema, formularios modales, búsqueda y filtros de movimientos, detalle y desglose por categorías, listas/detalles de tarjeta y deuda. Carga explícita de un ejemplo sintético de los módulos existentes, sin borrar datos, con claves estables para reintentos. Sin dependencias adicionales.

@@ -1,3 +1,4 @@
+import { createDebtApplication } from './debt-application';
 import { createCreditCardApplication } from './card-application';
 import { createFinanceApplication } from './application';
 import { createSqliteUnitOfWork } from '../../database/finance/repositories';
@@ -35,3 +36,5 @@ const unit = createSqliteUnitOfWork(async (): Promise<SqlConnection> => {
 }, runtime);
 export const finance = createFinanceApplication(unit, runtime);
 export const creditCards = createCreditCardApplication(unit, runtime);
+
+export const debts = createDebtApplication(unit, runtime);

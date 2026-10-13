@@ -102,7 +102,7 @@ test('posted entries are immutable and posting unbalanced ledger is blocked by S
 }));
 test('migration is reproducible; no editable balance column exists',()=>fixture(async({app,path,create})=>{
  await create('Bank',100);await app.close();const db=adapter(path);await migrateFinance(db,runtime.now());await migrateFinance(db,runtime.now());
- assert.equal((await db.all('SELECT COUNT(*) AS n FROM schema_migrations'))[0].n,2);
+ assert.equal((await db.all('SELECT COUNT(*) AS n FROM schema_migrations'))[0].n,3);
  assert.ok((await db.all('PRAGMA table_info(accounts)')).every(row=>!row.name.includes('balance')));await db.close();
 }));
 test('protected and inactive accounts retain wealth; cross-currency transfer fails',()=>fixture(async({app,profile,create,input})=>{

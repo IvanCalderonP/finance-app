@@ -1,158 +1,98 @@
-import { Link, useFocusEffect } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useRef, useState } from 'react';
-import { Button, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
-import { finance, newOperationKey } from '@/services/finance/runtime';
+import { Pressable, StyleSheet, Switch, Text, View } from 'react-native';
+import { finance, creditCards, debts, newOperationKey } from '@/services/finance/runtime';
+import { loadDemoData } from '@/services/finance/demo';
 import type { FinanceSnapshot, MovementInput } from '@/services/finance/application';
 import { FinancialError } from '@/financial-engine/model';
-import type { Account, Transaction } from '@/financial-engine/model';
+import type { Account, AccountBalance, Transaction } from '@/financial-engine/model';
 import { formatAmountMinor, parseAmountMinor } from '@/financial-engine/money';
-
-type Mode = 'ACCOUNT' | 'REVERSAL' | MovementInput['kind'];
-const labels: Record<Mode, string> = {
-  ACCOUNT: 'Crear cuenta', INCOME: 'Ingreso', EXPENSE: 'Gasto', DAILY: 'Gastos diarios', TRANSFER: 'Transferir', ADJUSTMENT: 'Ajuste con motivo', REVERSAL: 'Revertir movimiento',
-};
-function today() {
-  const date = new Date();
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
-}
-function Field({ label, value, onChange, numeric = false }: { label: string; value: string; onChange: (text: string) => void; numeric?: boolean }) {
-  return <View><Text>{label}</Text><TextInput accessibilityLabel={label} style={styles.input} value={value} onChangeText={onChange} keyboardType={numeric ? 'decimal-pad' : 'default'} /></View>;
-}
-function Choice({ selected, label, onPress }: { selected: boolean; label: string; onPress: () => void }) {
-  return <Pressable accessibilityRole="button" accessibilityState={{ selected }} onPress={onPress} style={[styles.choice, selected && styles.selected]}><Text>{label}</Text></Pressable>;
-}
-export default function FinanceHomeScreen() {
-  const [profileId, setProfileId] = useState('');
-  const [data, setData] = useState<FinanceSnapshot>();
-  const [busy, setBusy] = useState(true);
-  const guard = useRef(false);
-  const [error, setError] = useState('');
-  const [mode, setMode] = useState<Mode | null>(null);
-  const [amount, setAmount] = useState('');
-  const [name, setName] = useState('');
-  const [description, setDescription] = useState('');
-  const [effectiveDate, setEffectiveDate] = useState(today());
-  const [accountId, setAccountId] = useState('');
-  const [targetId, setTargetId] = useState('');
-  const [categoryId, setCategoryId] = useState('');
-  const [accountType, setAccountType] = useState<Account['type']>('bank');
-  const [policy, setPolicy] = useState<Account['availabilityPolicy']>('free');
-  const [currency, setCurrency] = useState('USD');
-  const [allowProtected, setAllowProtected] = useState(false);
-  const [original, setOriginal] = useState<Transaction>();
-  const operationKey = useRef<string | null>(null);
-
-  useFocusEffect(useCallback(() => {
-    let mounted = true;
-    void finance.initialProfile().then(async profile => {
-      const result = await finance.snapshot(profile.id);
-      if (mounted) { setProfileId(profile.id); setData(result); }
-    }).catch(() => { if (mounted) setError('No se pudo abrir la base local. Reinicia la app para reintentar.'); })
-      .finally(() => { if (mounted) setBusy(false); });
-    return () => { mounted = false; };
-  }, []));
-  async function perform(action: () => Promise<unknown>) {
-    if (guard.current) return;
-    guard.current = true; setBusy(true); setError('');
-    let saved = false;
-    try { await action(); saved = true; setData(await finance.snapshot(profileId)); }
-    catch (error) {
-      setError(saved ? 'La operación se guardó, pero no se pudo actualizar la vista. Reabre la app para leerla; no la registres otra vez.'
-        : error instanceof FinancialError ? error.message : 'No se pudo confirmar la operación local. Reintenta el mismo formulario para conservar su clave de operación.');
-    }
-    finally { guard.current = false; setBusy(false); }
+import { displayDate, displayMoney, localToday } from '@/components/format';
+import { AppButton, Badge, Card, Chip, EmptyState, Field, FormSheet, Loading, Metric, Notice, palette, Screen, SectionHeading, ui } from '@/components/ui';
+type Mode='ACCOUNT'|'REVERSAL'|'SPLIT'|MovementInput['kind'];
+const labels:Record<Mode,string>={ACCOUNT:'Nueva cuenta',INCOME:'Registrar ingreso',EXPENSE:'Registrar gasto',DAILY:'Gastos diarios',TRANSFER:'Transferir dinero',ADJUSTMENT:'Ajustar saldo',REVERSAL:'Revertir movimiento',SPLIT:'Desglosar gasto'};
+const accountTypes:Record<Account['type'],string>={bank:'Banco',savings:'Ahorro',custom:'Otra cuenta',cash:'Efectivo'};
+export default function FinanceHomeScreen({section='home'}:{section?:'home'|'accounts'|'transactions'}){
+ const [profileId,setProfileId]=useState(''),[data,setData]=useState<FinanceSnapshot>();
+ const [busy,setBusy]=useState(false),[loading,setLoading]=useState(true),[message,setMessage]=useState(''),[success,setSuccess]=useState(false);
+ const guard=useRef(false),operationKey=useRef<string|null>(null);
+ const [mode,setMode]=useState<Mode|null>(null),[amount,setAmount]=useState(''),[name,setName]=useState(''),[description,setDescription]=useState(''),[effectiveDate,setEffectiveDate]=useState(localToday());
+ const [accountId,setAccountId]=useState(''),[targetId,setTargetId]=useState(''),[categoryId,setCategoryId]=useState('');
+ const [accountType,setAccountType]=useState<Account['type']>('bank'),[policy,setPolicy]=useState<Account['availabilityPolicy']>('free'),[currency,setCurrency]=useState('USD'),[allowProtected,setAllowProtected]=useState(false);
+ const [original,setOriginal]=useState<Transaction>(),[detail,setDetail]=useState<Transaction>(),[managed,setManaged]=useState<AccountBalance>();
+ const [splitValues,setSplitValues]=useState<Record<string,string>>({}),[query,setQuery]=useState(''),[filter,setFilter]=useState('all'),[displayCurrency,setDisplayCurrency]=useState('USD'),[showWealth,setShowWealth]=useState(false);
+ const refresh=useCallback(async()=>{const profile=await finance.initialProfile();const snapshot=await finance.snapshot(profile.id);setProfileId(profile.id);setData(snapshot);},[]);
+ useFocusEffect(useCallback(()=>{let mounted=true;void refresh().catch(error=>{if(mounted)setMessage(error instanceof Error?error.message:'No se pudo abrir tu espacio. Intenta actualizar.');}).finally(()=>{if(mounted)setLoading(false);});return()=>{mounted=false;};},[refresh]));
+ async function perform(action:()=>Promise<unknown>,confirmation='Guardado correctamente'){
+  if(guard.current)return;guard.current=true;setBusy(true);setMessage('');setSuccess(false);let saved=false;
+  try{await action();saved=true;await refresh();setSuccess(true);setMessage(confirmation);}
+  catch(error){setMessage(saved?'La operación se guardó. Pulsa Actualizar para ver los cambios.':error instanceof Error?error.message:'No se pudo guardar. Puedes reintentar con el mismo formulario.');}
+  finally{guard.current=false;setBusy(false);}
+ }
+ function begin(next:Mode,transaction?:Transaction,sourceId?:string){
+  if(guard.current)return;setDetail(undefined);setManaged(undefined);setMode(next);setMessage('');setSuccess(false);setAmount(next==='ACCOUNT'?'0':'');setName('');setDescription('');setEffectiveDate(localToday());
+  setAccountId(sourceId??data?.accounts.find(row=>row.account.active&&row.account.availabilityPolicy==='free')?.account.id??data?.accounts.find(row=>row.account.active)?.account.id??'');
+  setTargetId('');setCategoryId(data?.categories.find(row=>row.kind===(next==='INCOME'?'INCOME':'EXPENSE'))?.id??'');setAccountType('bank');setPolicy('free');setCurrency('USD');setAllowProtected(false);setOriginal(transaction);operationKey.current=null;
+  setSplitValues(Object.fromEntries((data?.categories.filter(row=>row.kind==='EXPENSE')??[]).map(row=>[row.id,transaction?.splits.find(split=>split.categoryId===row.id)?formatAmountMinor(transaction.splits.find(split=>split.categoryId===row.id)!.amountMinor,transaction.currency).slice(4):''])));
+ }
+ async function save(){await perform(async()=>{
+  if(!mode)return;
+  if(mode==='SPLIT'){
+   if(!original)throw new FinancialError('Selecciona el gasto');
+   const splits=Object.entries(splitValues).filter(([,value])=>value.trim()!==''&&parseAmountMinor(value)>0).map(([categoryId,value])=>({categoryId,amountMinor:parseAmountMinor(value)}));
+   await finance.splitExpense(profileId,original.id,splits);
+  }else{
+   operationKey.current??=await newOperationKey();const common={profileId,idempotencyKey:operationKey.current,effectiveDate,description};
+   if(mode==='ACCOUNT')await finance.createAccount({...common,name,type:accountType,currency,availabilityPolicy:policy,initialBalanceMinor:parseAmountMinor(amount,true)});
+   else if(mode==='REVERSAL'){if(!original)throw new FinancialError('Selecciona un movimiento');await finance.reverse({...common,originalId:original.id});}
+   else await finance.post({...common,kind:mode,accountId,toAccountId:targetId||undefined,categoryId:categoryId||undefined,amountMinor:parseAmountMinor(amount,mode==='ADJUSTMENT'),allowProtected});
   }
-  function begin(next: Mode, transaction?: Transaction) {
-    setError(''); setMode(next); setAmount(next === 'ACCOUNT' ? '0' : ''); setName(''); setDescription(''); setEffectiveDate(today());
-    setAccountId(data?.accounts.find(row => row.account.active && row.account.availabilityPolicy === 'free')?.account.id ?? data?.accounts.find(row => row.account.active)?.account.id ?? '');
-    setTargetId(''); setCategoryId(data?.categories.find(row => row.kind === (next === 'INCOME' ? 'INCOME' : 'EXPENSE'))?.id ?? '');
-    setAccountType('bank'); setPolicy('free'); setCurrency('USD'); setAllowProtected(false); setOriginal(transaction); operationKey.current = null;
-  }
-  async function save() {
-    await perform(async () => {
-      if (!mode) return;
-      operationKey.current ??= await newOperationKey();
-      const common = { profileId, idempotencyKey: operationKey.current, effectiveDate, description };
-      if (mode === 'ACCOUNT') {
-        await finance.createAccount({ ...common, name, type: accountType, currency, availabilityPolicy: policy, initialBalanceMinor: parseAmountMinor(amount, true) });
-      } else if (mode === 'REVERSAL') {
-        if (!original) throw new FinancialError('Selecciona el movimiento original');
-        await finance.reverse({ ...common, originalId: original.id });
-      } else {
-        await finance.post({ ...common, kind: mode, accountId, toAccountId: targetId || undefined, categoryId: categoryId || undefined,
-          amountMinor: parseAmountMinor(amount, mode === 'ADJUSTMENT'), allowProtected });
-      }
-      setMode(null); operationKey.current = null;
-    });
-  }
-  const active = data?.accounts.filter(row => row.account.active) ?? [];
-  const source = active.find(row => row.account.id === accountId)?.account;
-  const reversedIds = new Set(data?.transactions.map(row => row.reversalOf).filter(Boolean));
-  return (
-    <ScrollView contentContainerStyle={styles.page} keyboardShouldPersistTaps="handled">
-      <Text style={styles.heading}>Finance App</Text>
-      <Text>Perfil LOCAL · datos en este dispositivo · sin cifrado todavía.</Text>
-      <Text>Disponible parcial: excluye saldo positivo protegido. TC, recibos, metas y deudas aún no participan.</Text>
-      {busy && <Text accessibilityLiveRegion="polite">Procesando…</Text>}
-      {!!error && <Text style={styles.error} accessibilityLiveRegion="polite">{error}</Text>}
-      {!data?.totals.length && <Text>Sin cuentas. Crea una o carga datos sintéticos para probar.</Text>}
-      {data?.totals.map(total => <View key={total.currency} style={styles.card}>
-        <Text style={styles.heading}>Disponible real: {formatAmountMinor(total.availableMinor, total.currency)}</Text>
-        <Text>Saldo físico: {formatAmountMinor(total.physicalMinor, total.currency)}</Text>
-        <Text>Tarjetas pendientes: {formatAmountMinor(total.cardDebtMinor, total.currency)}</Text>
-        <Text>Patrimonio actual: {formatAmountMinor(total.netWorthMinor, total.currency)}</Text>
-      </View>)}
-      <View style={styles.row}>
-        {(['INCOME','EXPENSE','DAILY','TRANSFER'] satisfies Mode[]).map(value => <Button key={value} title={`${value === 'TRANSFER' ? '' : '+ '}${labels[value]}`} disabled={busy || active.length === 0} onPress={() => begin(value)} />)}
-      </View>
-      <Button title="Crear cuenta" disabled={busy || !profileId} onPress={() => begin('ACCOUNT')} />
-      {!!data && data.accounts.length === 0 && <Button title="Cargar datos sintéticos (1200 + 200 + 100)" disabled={busy} onPress={() => void perform(() => finance.seedDevelopment(profileId))} />}
-      {!!mode && <View style={styles.card}>
-        <Text style={styles.heading}>{labels[mode]}</Text>
-        {mode === 'ACCOUNT' ? <>
-          <Field label="Nombre" value={name} onChange={setName} />
-          <Text>Tipo (efectivo opcional)</Text><View style={styles.row}>{(['bank','savings','custom','cash'] satisfies Account['type'][]).map(value => <Choice key={value} selected={accountType === value} label={value} onPress={() => setAccountType(value)} />)}</View>
-          <Text>Moneda V1</Text><View style={styles.row}>{['USD','EUR'].map(value => <Choice key={value} selected={currency === value} label={value} onPress={() => setCurrency(value)} />)}</View>
-          <Text>Disponibilidad</Text><View style={styles.row}>{(['free','protected'] satisfies Account['availabilityPolicy'][]).map(value => <Choice key={value} selected={policy === value} label={value} onPress={() => setPolicy(value)} />)}</View>
-          <Field label="Saldo de apertura (genera asientos; no es ingreso)" value={amount} onChange={setAmount} />
-        </> : mode !== 'REVERSAL' ? <>
-          <Text>{mode === 'INCOME' ? 'Cuenta destino' : 'Desde'} ({source?.currency ?? 'selecciona'})</Text><View style={styles.row}>{active.map(({ account }) => <Choice key={account.id} selected={accountId === account.id} label={account.name} onPress={() => { setAccountId(account.id); setAllowProtected(false); }} />)}</View>
-          <Field label="Monto" value={amount} onChange={setAmount} numeric={mode !== 'ADJUSTMENT'} />
-          {mode === 'TRANSFER' && <><Text>Cuenta destino</Text><View style={styles.row}>{active.filter(row => row.account.id !== accountId && row.account.currency === source?.currency).map(({ account }) => <Choice key={account.id} selected={targetId === account.id} label={account.name} onPress={() => setTargetId(account.id)} />)}</View><Text>Es transferencia: no genera gasto ni ingreso.</Text></>}
-          {mode === 'DAILY' && <Text>Categoría: Gastos cotidianos. Gasto agregado al retirar; no se crea saldo de efectivo ni se pide cuánto queda.</Text>}
-          {(mode === 'INCOME' || mode === 'EXPENSE') && <><Text>Categoría</Text><View style={styles.row}>{data?.categories.filter(category => category.kind === (mode === 'INCOME' ? 'INCOME' : 'EXPENSE')).map(category => <Choice key={category.id} selected={categoryId === category.id} label={category.name} onPress={() => setCategoryId(category.id)} />)}</View></>}
-          {source?.availabilityPolicy === 'protected' && (mode === 'EXPENSE' || mode === 'DAILY' || mode === 'TRANSFER') && <View style={styles.row}><Switch value={allowProtected} onValueChange={setAllowProtected} accessibilityLabel="Confirmar uso de fondos protegidos" /><Text>Confirmo utilizar fondos protegidos</Text></View>}
-        </> : <Text>El original se conserva y se escriben asientos opuestos.</Text>}
-        <Field label="Fecha efectiva (YYYY-MM-DD)" value={effectiveDate} onChange={setEffectiveDate} />
-        {mode !== 'ACCOUNT' && <Field label={mode === 'REVERSAL' || mode === 'ADJUSTMENT' ? 'Motivo obligatorio' : 'Descripción opcional'} value={description} onChange={setDescription} />}
-        <Button title="Guardar" disabled={busy} onPress={() => void save()} />
-        <Button title="Cancelar" disabled={busy} onPress={() => setMode(null)} />
-      </View>}
-      <Text style={styles.heading}>Cuentas</Text>
-      {data?.accounts.map(({ account, balanceMinor }) => <View style={styles.card} key={account.id}>
-        <Text>{account.name} · {account.type} · {account.availabilityPolicy} · {account.active ? 'activa' : 'inactiva'}</Text>
-        <Text>{formatAmountMinor(balanceMinor, account.currency)}</Text>
-        <View style={styles.row}>
-          <Button title={account.active ? 'Desactivar' : 'Activar'} disabled={busy} onPress={() => void perform(() => finance.configureAccount(profileId, account.id, !account.active, account.availabilityPolicy))} />
-          <Button title={account.availabilityPolicy === 'free' ? 'Proteger saldo' : 'Marcar saldo libre'} disabled={busy} onPress={() => void perform(() => finance.configureAccount(profileId, account.id, account.active, account.availabilityPolicy === 'free' ? 'protected' : 'free'))} />
-          {account.active && <Button title="Ajuste" disabled={busy} onPress={() => { begin('ADJUSTMENT'); setAccountId(account.id); }} />}
-        </View>
-      </View>)}
-      <Text style={styles.heading}>Movimientos</Text>
-      {data?.transactions.slice(0, 30).map(transaction => <View style={styles.card} key={transaction.id}>
-        <Text>{transaction.effectiveDate} · {transaction.subtype === 'daily' && transaction.type === 'EXPENSE' ? 'Gastos diarios' : transaction.type}</Text>
-        <Text>{formatAmountMinor(transaction.entries.reduce((sum, entry) => sum + entry.debitMinor, 0), transaction.currency)}{transaction.description ? ` · ${transaction.description}` : ''}</Text>
-        {transaction.splits.map(split => <Text key={split.categoryId}>{data.categories.find(row => row.id === split.categoryId)?.name}: {formatAmountMinor(split.amountMinor, transaction.currency)}</Text>)}
-        {transaction.type !== 'REVERSAL' && !transaction.entries.some(entry => data?.cards.some(row => row.card.nodeId === entry.nodeId)) && <Button title={reversedIds.has(transaction.id) ? 'Revertido' : 'Revertir'} disabled={busy || reversedIds.has(transaction.id)} onPress={() => begin('REVERSAL', transaction)} />}
-      </View>)}
-      <Link href="/cards">Tarjetas</Link>
-      <Link href="/storage-lab">Laboratorio sintético de almacenamiento</Link>
-    </ScrollView>
-  );
+  setMode(null);operationKey.current=null;
+ });}
+ const active=data?.accounts.filter(row=>row.account.active)??[],source=active.find(row=>row.account.id===accountId)?.account;
+ const hasDemoAccounts=data?.accounts.length===3&&data.accounts.every(row=>['Banco · ejemplo','Ahorro · ejemplo','Secundaria · ejemplo'].includes(row.account.name));
+ const total=data?.totals.find(row=>row.currency===displayCurrency)??data?.totals[0];
+ const reversed=new Set(data?.transactions.map(row=>row.reversalOf).filter(Boolean));
+ const money=(value:number,code=total?.currency??displayCurrency)=>displayMoney(value,code);
+ function related(transaction:Transaction){return {card:data?.cards.find(row=>transaction.entries.some(entry=>entry.nodeId===row.card.nodeId)),debt:data?.debts.find(row=>transaction.entries.some(entry=>entry.nodeId===row.debt.nodeId))};}
+ function transactionLabel(transaction:Transaction){
+  if(transaction.type==='REVERSAL')return 'Reverso';
+  const {card,debt}=related(transaction);
+  if(card)return transaction.type==='EXPENSE'?'Compra con tarjeta':transaction.type==='OPENING'?'Deuda inicial de tarjeta':'Pago de tarjeta';
+  if(debt){const event=debt.history.find(row=>row.transactionId===transaction.id);if(event?.kind==='PAYMENT')return debt.debt.direction==='receivable'?'Cobro de préstamo':'Pago de deuda';return {loan_given:'Préstamo entregado',loan_received:'Préstamo recibido',existing_payable:'Obligación existente',financed_expense:'Compra financiada'}[debt.debt.originKind];}
+  return transaction.subtype==='daily'&&transaction.type==='EXPENSE'?'Gastos diarios':{OPENING:'Saldo inicial',INCOME:'Ingreso',EXPENSE:'Gasto',TRANSFER:'Transferencia',ADJUSTMENT:'Ajuste',REVERSAL:'Reverso'}[transaction.type];
+ }
+ const filtered=(data?.transactions??[]).filter(row=>(filter==='all'||row.type===filter)&&[row.description,transactionLabel(row),...row.splits.map(split=>data?.categories.find(c=>c.id===split.categoryId)?.name??'')].join(' ').toLowerCase().includes(query.toLowerCase()));
+ function transactionRow(transaction:Transaction){const outgoing=transaction.type==='EXPENSE',income=transaction.type==='INCOME';const category=data?.categories.find(row=>row.id===transaction.splits[0]?.categoryId)?.name;
+  return <Pressable accessibilityRole="button" accessibilityLabel={`Ver ${transactionLabel(transaction)}`} key={transaction.id} onPress={()=>setDetail(transaction)} style={({pressed})=>[styles.activity,{opacity:pressed?.65:1}]}><View style={[styles.activityIcon,{backgroundColor:outgoing?'#FCEDE7':income?palette.soft:'#EEF1ED'}]}><Text style={{color:outgoing?palette.danger:income?palette.primary:palette.muted,fontSize:20}}>{outgoing?'↗':income?'↙':'↔'}</Text></View><View style={{flex:1,gap:3}}><Text style={ui.text}>{transaction.description||transactionLabel(transaction)}</Text><Text style={ui.muted}>{category??transactionLabel(transaction)} · {displayDate(transaction.effectiveDate)}</Text></View><View style={{alignItems:'flex-end',gap:4}}><Text style={{fontSize:15,fontWeight:'700',color:outgoing?palette.ink:income?palette.primary:palette.ink}}>{outgoing?'−':income?'+':''}{money(transaction.entries.reduce((sum,e)=>sum+e.debitMinor,0),transaction.currency)}</Text>{reversed.has(transaction.id)&&<Badge label="Revertido"/>}</View></Pressable>;
+ }
+ const titles={home:['Tu dinero, en orden','Una vista clara de lo que tienes y lo que puedes usar.'],accounts:['Tus cuentas','Banco, ahorro y efectivo, en un mismo lugar.'],transactions:['Movimientos','Cada entrada, cada salida y su historia.']}[section];
+ return <Screen title={titles[0]} subtitle={titles[1]} action={<Badge label="Perfil local" tone="green"/>}>
+  {loading&&<Loading/>}<Notice message={!mode?message:''} tone={success?'success':'error'}/>
+  <View style={ui.row}>{(data?.totals.length??0)>1&&data?.totals.map(row=><Chip key={row.currency} label={row.currency} selected={(total?.currency??displayCurrency)===row.currency} onPress={()=>setDisplayCurrency(row.currency)}/>)}<View style={{flex:1}}/><AppButton title="Actualizar" variant="ghost" disabled={busy} onPress={()=>{void refresh().catch(error=>setMessage(String(error)));}}/></View>
+  {section==='home'&&<>
+   <View style={styles.hero}><View style={styles.orbit}/><View style={ui.row}><Text style={styles.heroLabel}>DISPONIBLE REAL</Text><View style={{flex:1}}/><Badge label="Hoy" tone="green"/></View><Text numberOfLines={1} adjustsFontSizeToFit style={styles.heroAmount}>{money(total?.availableMinor??0)}</Text><Text style={styles.heroHint}>Tu saldo libre después de tarjetas y deudas.</Text><View style={styles.heroDivider}/><View style={ui.row}><View style={{flex:1}}><Text style={styles.heroHint}>Saldo en cuentas</Text><Text style={styles.heroSmall}>{money(total?.physicalMinor??0)}</Text></View><View style={{flex:1}}><Text style={styles.heroHint}>Tarjetas + yo debo</Text><Text style={styles.heroSmall}>{money((total?.cardDebtMinor??0)+(total?.payableMinor??0))}</Text></View></View></View>
+   <View style={styles.quickRow}>{([{kind:'INCOME',title:'Ingreso',icon:'↓'},{kind:'EXPENSE',title:'Gasto',icon:'↑'},{kind:'TRANSFER',title:'Transferir',icon:'⇄'},{kind:'DAILY',title:'Gastos diarios',icon:'⋯'}] as const).map(action=><Pressable key={action.kind} accessibilityRole="button" disabled={busy||!active.length} onPress={()=>begin(action.kind)} style={({pressed})=>[styles.quick,{opacity:busy||!active.length?.4:pressed?.7:1}]}><View style={styles.quickIcon}><Text style={{fontSize:22,color:palette.primary}}>{action.icon}</Text></View><Text style={styles.quickLabel}>{action.title}</Text></Pressable>)}</View>
+   {!data?.accounts.length&&!loading&&<EmptyState title="Empieza por una cuenta" description="Crea tu primera cuenta o explora la app con ejemplos de cuentas, tarjetas y deudas." action={<View style={ui.row}><AppButton title="Crear cuenta" disabled={busy||!profileId} onPress={()=>begin('ACCOUNT')}/><AppButton title="Probar con ejemplos" variant="secondary" disabled={busy||!profileId} onPress={()=>void perform(()=>loadDemoData({finance,creditCards,debts}),'Ejemplos listos: explora tus cuentas, tarjetas y deudas.')}/></View>}/>}
+   {hasDemoAccounts&&(!data?.cards.length||(data?.debts.length??0)<2)&&<AppButton title="Completar ejemplos de tarjetas y deudas" variant="secondary" disabled={busy} onPress={()=>void perform(()=>loadDemoData({finance,creditCards,debts}),'Ejemplos completos. Puedes probar todas las secciones.')}/>}
+   <View style={styles.columns}><Card style={{flex:1,minWidth:260}}><SectionHeading title="Tus compromisos"/><View style={styles.summaryLine}><Text style={ui.muted}>Tarjetas pendientes</Text><Text style={ui.heading}>{money(total?.cardDebtMinor??0)}</Text></View><View style={styles.summaryLine}><Text style={ui.muted}>Yo debo</Text><Text style={ui.heading}>{money(total?.payableMinor??0)}</Text></View><View style={ui.divider}/><AppButton title="Ver tarjetas" variant="ghost" onPress={()=>router.push('/cards')}/></Card><Card style={{flex:1,minWidth:260,backgroundColor:'#ECF3ED'}}><Badge label="Fuera del disponible"/><Text style={ui.muted}>Me deben</Text><Text style={styles.summaryAmount}>{money(total?.receivableMinor??0)}</Text><Text style={ui.muted}>Este dinero se suma a tu saldo cuando recibes el pago.</Text><AppButton title="Ver deudas" variant="ghost" onPress={()=>router.push('/debts')}/></Card></View>
+   <Card><Pressable accessibilityRole="button" onPress={()=>setShowWealth(!showWealth)} style={styles.summaryLine}><Text style={ui.heading}>Tu patrimonio</Text><Text style={ui.muted}>{showWealth?'Ocultar −':'Ver detalle +'}</Text></Pressable>{showWealth&&<View style={ui.row}><Metric label="Incluyendo por cobrar" value={money(total?.netWorthMinor??0)}/><Metric label="Sin cuentas por cobrar" value={money(total?.netWorthLiquidMinor??0)}/></View>}</Card>
+  </>}
+  {(section==='accounts'||section==='home')&&<><SectionHeading title={section==='home'?'Mis cuentas':'Cuentas y saldos'} subtitle={section==='accounts'?'El ahorro protegido permanece fuera del disponible.':undefined} action={<AppButton title={section==='home'?'Ver todas':'Nueva cuenta'} variant="ghost" icon="+" disabled={busy||!profileId} onPress={()=>section==='home'?router.push('/accounts'):begin('ACCOUNT')}/>}/>{!data?.accounts.length&&section==='accounts'&&!loading?<EmptyState title="Todo empieza aquí" description="Añade una cuenta bancaria, de ahorro o efectivo con su saldo actual." action={<AppButton title="Añadir cuenta" onPress={()=>begin('ACCOUNT')}/>}/>:<View style={styles.columns}>{data?.accounts.filter(row=>section==='accounts'||row.account.currency===total?.currency).slice(0,section==='home'?3:undefined).map(row=><Pressable accessibilityRole="button" accessibilityLabel={`Administrar ${row.account.name}`} key={row.account.id} style={{flexGrow:1,flexBasis:260}} onPress={()=>{setMessage('');setManaged(row);}}><Card><View style={styles.summaryLine}><View style={styles.accountIcon}><Text style={{fontSize:19,color:palette.primary}}>{row.account.type==='cash'?'$':'▤'}</Text></View><Badge label={!row.account.active?'Inactiva':row.account.availabilityPolicy==='protected'?'Protegida':'Disponible'} tone={row.account.active&&row.account.availabilityPolicy==='free'?'green':'neutral'}/></View><Text style={ui.heading}>{row.account.name}</Text><Text numberOfLines={1} adjustsFontSizeToFit style={styles.accountAmount}>{money(row.balanceMinor,row.account.currency)}</Text><Text style={ui.muted}>{accountTypes[row.account.type]} · {row.account.currency}</Text></Card></Pressable>)}</View>}</>}
+  {(section==='transactions'||section==='home')&&<><SectionHeading title={section==='home'?'Últimos movimientos':'Tu actividad'} action={section==='home'?<AppButton title="Ver todos" variant="ghost" onPress={()=>router.push('/transactions')}/>:<AppButton title="Nuevo gasto" icon="+" disabled={busy||!active.length} onPress={()=>begin('EXPENSE')}/>}/>{section==='transactions'&&<><Field label="Buscar movimientos" value={query} onChange={setQuery} placeholder="Descripción o categoría"/><View style={ui.row}>{[{key:'all',label:'Todos'},{key:'INCOME',label:'Ingresos'},{key:'EXPENSE',label:'Gastos'},{key:'TRANSFER',label:'Transferencias'}].map(row=><Chip key={row.key} label={row.label} selected={filter===row.key} onPress={()=>setFilter(row.key)}/>)}</View><View style={ui.row}><AppButton title="Ingreso" variant="secondary" disabled={busy||!active.length} onPress={()=>begin('INCOME')}/><AppButton title="Transferir" variant="secondary" disabled={busy||!active.length} onPress={()=>begin('TRANSFER')}/><AppButton title="Gastos diarios" variant="secondary" disabled={busy||!active.length} onPress={()=>begin('DAILY')}/></View></>}{filtered.length?<Card style={{paddingVertical:8}}>{filtered.slice(0,section==='home'?5:undefined).map(transactionRow)}</Card>:!loading&&<EmptyState title={query?'Sin coincidencias':'Aún no hay movimientos'} description={query?'Prueba otra descripción o cambia el filtro.':'Registra un ingreso o un gasto para empezar tu historial.'}/>}</>}
+  <Text style={styles.footer}>Datos locales · Versión de prueba · Usa ejemplos hasta activar cifrado.</Text>
+  {section==='accounts'&&<AppButton title="Laboratorio técnico" variant="ghost" onPress={()=>router.push('/storage-lab')}/>}
+  <FormSheet visible={mode!==null} title={mode?labels[mode]:''} onClose={()=>setMode(null)} busy={busy}>
+   <Notice message={message} tone={success?'success':'error'}/>
+   {mode==='ACCOUNT'?<><Field label="Nombre de la cuenta" value={name} onChange={setName} placeholder="Ej. Mi banco"/><Text style={ui.muted}>Tipo de cuenta</Text><View style={ui.row}>{(Object.keys(accountTypes) as Account['type'][]).map(value=><Chip key={value} label={accountTypes[value]} selected={accountType===value} onPress={()=>setAccountType(value)}/>)}</View><View style={ui.row}>{['USD','EUR'].map(value=><Chip key={value} label={value} selected={currency===value} onPress={()=>setCurrency(value)}/>)}</View><Field label="Saldo inicial" value={amount} onChange={setAmount} numeric hint="Es el dinero que ya tienes; no se registra como ingreso."/><View style={ui.row}><Switch value={policy==='protected'} onValueChange={value=>setPolicy(value?'protected':'free')} trackColor={{true:palette.primary}}/><Text style={ui.text}>Proteger este saldo</Text></View><Text style={ui.muted}>El saldo protegido cuenta en tu patrimonio, pero no en tu disponible.</Text></>:mode==='SPLIT'?<><Text style={ui.text}>Distribuye {original?money(original.splits.reduce((s,row)=>s+row.amountMinor,0),original.currency):''} entre categorías. El total del gasto permanece igual.</Text>{data?.categories.filter(row=>row.kind==='EXPENSE').map(row=><Field key={row.id} label={row.name} value={splitValues[row.id]??''} onChange={value=>setSplitValues(current=>({...current,[row.id]:value}))} placeholder="0.00" numeric/>)}</>:mode==='REVERSAL'?<Notice message="Se conservará el movimiento original y se registrará su reverso."/>:<><Text style={ui.muted}>{mode==='INCOME'?'Cuenta donde entra':'Cuenta desde la que sale'}</Text><View style={ui.row}>{active.map(row=><Chip key={row.account.id} label={`${row.account.name} · ${row.account.currency}`} selected={accountId===row.account.id} onPress={()=>{setAccountId(row.account.id);setAllowProtected(false);setTargetId('');}}/>)}</View><Field label={`Monto (${source?.currency??'USD'})`} value={amount} onChange={setAmount} numeric placeholder="0.00"/>{mode==='TRANSFER'&&<><Text style={ui.muted}>Cuenta de destino</Text><View style={ui.row}>{active.filter(row=>row.account.id!==accountId&&row.account.currency===source?.currency).map(row=><Chip key={row.account.id} label={row.account.name} selected={targetId===row.account.id} onPress={()=>setTargetId(row.account.id)}/>)}</View><Text style={ui.muted}>Para retirar a efectivo, selecciona una cuenta Efectivo.</Text></>}{mode==='DAILY'&&<Notice message="Se registra un gasto cotidiano agregado. Después puedes desglosarlo por categorías."/>}{(mode==='INCOME'||mode==='EXPENSE')&&<><Text style={ui.muted}>Categoría</Text><View style={ui.row}>{data?.categories.filter(row=>row.kind===(mode==='INCOME'?'INCOME':'EXPENSE')).map(row=><Chip key={row.id} label={row.name} selected={categoryId===row.id} onPress={()=>setCategoryId(row.id)}/>)}</View></>}{source?.availabilityPolicy==='protected'&&['EXPENSE','DAILY','TRANSFER'].includes(mode??'')&&<View style={ui.row}><Switch value={allowProtected} onValueChange={setAllowProtected}/><Text style={ui.text}>Confirmo usar fondos protegidos</Text></View>}</>}
+   {mode!=='SPLIT'&&<Field label="Fecha (AAAA-MM-DD)" value={effectiveDate} onChange={setEffectiveDate}/>}{mode!=='ACCOUNT'&&mode!=='SPLIT'&&<Field label={mode==='REVERSAL'||mode==='ADJUSTMENT'?'Motivo obligatorio':'Descripción opcional'} value={description} onChange={setDescription} placeholder="¿Para qué fue?"/>}<AppButton title={busy?'Guardando…':mode==='REVERSAL'?'Confirmar reverso':'Guardar'} variant={mode==='REVERSAL'?'danger':'primary'} disabled={busy} onPress={()=>void save()}/>
+  </FormSheet>
+  <FormSheet visible={!!detail} title={detail?transactionLabel(detail):''} subtitle={detail?displayDate(detail.effectiveDate):undefined} onClose={()=>setDetail(undefined)}>
+   {detail&&<><Metric label="Monto" value={money(detail.entries.reduce((s,e)=>s+e.debitMinor,0),detail.currency)}/><Text style={ui.text}>{detail.description||'Sin descripción'}</Text>{data?.accounts.filter(row=>detail.entries.some(e=>e.nodeId===row.account.nodeId)).map(row=><Text key={row.account.id} style={ui.muted}>Cuenta: {row.account.name}</Text>)}{detail.splits.map(split=><View key={split.categoryId} style={styles.summaryLine}><Text style={ui.text}>{data?.categories.find(row=>row.id===split.categoryId)?.name}</Text><Text style={ui.text}>{money(split.amountMinor,detail.currency)}</Text></View>)}{related(detail).card?<AppButton title="Ver en Tarjetas" onPress={()=>{setDetail(undefined);router.push('/cards');}}/>:related(detail).debt?<AppButton title="Ver en Deudas" onPress={()=>{setDetail(undefined);router.push('/debts');}}/>:detail.type!=='REVERSAL'&&!reversed.has(detail.id)&&<><AppButton title="Revertir movimiento" variant="danger" onPress={()=>begin('REVERSAL',detail)}/>{detail.type==='EXPENSE'&&<AppButton title="Desglosar por categorías" variant="secondary" onPress={()=>begin('SPLIT',detail)}/>}</>}{reversed.has(detail.id)&&<Badge label="Este movimiento ya fue revertido"/>}</>}
+  </FormSheet>
+  <FormSheet visible={!!managed} title={managed?.account.name??''} onClose={()=>setManaged(undefined)} busy={busy}>
+   {managed&&<><Metric label="Saldo actual" value={money(data?.accounts.find(row=>row.account.id===managed.account.id)?.balanceMinor??managed.balanceMinor,managed.account.currency)}/><Notice message={message} tone={success?'success':'error'}/><AppButton title={managed.account.availabilityPolicy==='free'?'Proteger saldo':'Marcar saldo disponible'} variant="secondary" disabled={busy} onPress={()=>void perform(async()=>{await finance.configureAccount(profileId,managed.account.id,managed.account.active,managed.account.availabilityPolicy==='free'?'protected':'free');setManaged(undefined);})}/><AppButton title={managed.account.active?'Desactivar cuenta':'Activar cuenta'} variant="ghost" disabled={busy} onPress={()=>void perform(async()=>{await finance.configureAccount(profileId,managed.account.id,!managed.account.active,managed.account.availabilityPolicy);setManaged(undefined);})}/>{managed.account.active&&<AppButton title="Ajustar saldo con motivo" variant="ghost" disabled={busy} onPress={()=>begin('ADJUSTMENT',undefined,managed.account.id)}/>}</>}
+  </FormSheet>
+ </Screen>;
 }
-const styles = StyleSheet.create({
-  page: { padding: 20, paddingTop: 56, gap: 16, backgroundColor: '#fff' }, heading: { fontSize: 20, fontWeight: '600' },
-  card: { borderWidth: 1, borderColor: '#ddd', padding: 14, gap: 10 }, row: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, alignItems: 'center' },
-  input: { borderWidth: 1, borderColor: '#aaa', padding: 10, marginTop: 4 }, choice: { padding: 10, borderWidth: 1, borderColor: '#bbb' },
-  selected: { backgroundColor: '#dbeafe', borderColor: '#2563eb' }, error: { color: '#b91c1c' },
-});
+const styles=StyleSheet.create({hero:{backgroundColor:palette.ink,borderRadius:24,padding:26,gap:13,overflow:'hidden'},heroLabel:{fontSize:11,fontWeight:'700',color:'#BBD4C8',letterSpacing:2},heroAmount:{fontSize:46,fontWeight:'700',color:palette.white,letterSpacing:-1.8},heroHint:{color:'#A9C4B8',fontSize:12,lineHeight:19},heroSmall:{fontSize:22,color:palette.white,fontWeight:'600',marginTop:5},heroDivider:{height:1,backgroundColor:'#34514B',marginVertical:8},orbit:{position:'absolute',right:-40,top:-80,width:260,height:260,borderWidth:42,borderColor:'#203F37',borderRadius:150},quickRow:{flexDirection:'row',gap:10},quick:{flex:1,alignItems:'center',gap:9,paddingVertical:12},quickIcon:{width:52,height:52,borderRadius:18,backgroundColor:palette.white,borderWidth:1,borderColor:palette.border,alignItems:'center',justifyContent:'center'},quickLabel:{fontSize:11,fontWeight:'700',color:palette.ink},columns:{flexDirection:'row',flexWrap:'wrap',gap:16},summaryLine:{flexDirection:'row',alignItems:'center',justifyContent:'space-between',gap:12},summaryAmount:{fontSize:32,fontWeight:'700',color:palette.ink,letterSpacing:-1},accountIcon:{width:42,height:42,borderRadius:13,backgroundColor:palette.soft,alignItems:'center',justifyContent:'center'},accountAmount:{fontSize:28,fontWeight:'700',color:palette.ink,letterSpacing:-.8},activity:{flexDirection:'row',alignItems:'center',gap:12,paddingVertical:15,borderBottomWidth:1,borderBottomColor:'#F0F3EE'},activityIcon:{width:42,height:42,borderRadius:14,alignItems:'center',justifyContent:'center'},footer:{fontSize:10,textAlign:'center',color:palette.muted,paddingVertical:12}});

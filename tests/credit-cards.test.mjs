@@ -57,7 +57,7 @@ test('migration upgrades populated V1, preserves ledger and enforces FKs',async(
  const {registerOpeningBalance}=await import('../src/financial-engine/commands.ts');const opening=registerOpeningBalance({id:randomUUID(),profileId:profile.id,idempotencyKey:randomUUID(),effectiveDate:'2026-09-10',createdAt:runtime.now(),description:'Synthetic'}, {...node,nodeId:node.id,active:true,availabilityPolicy:'free',type:'bank',name:'Synthetic'},12345,await repos.ledger.systemNode(profile.id,'USD','EQUITY'));
  await repos.transactions.insert(opening,'synthetic');const before=await repos.ledger.entries(profile.id);
  await migrateFinance(db,runtime.now());await migrateFinance(db,runtime.now());
- assert.deepEqual(await repos.ledger.entries(profile.id),before);assert.equal((await db.all('PRAGMA user_version'))[0].user_version,2);assert.equal((await db.all('PRAGMA foreign_keys'))[0].foreign_keys,1);assert.deepEqual(await db.all('PRAGMA foreign_key_check'),[]);
+ assert.deepEqual(await repos.ledger.entries(profile.id),before);assert.equal((await db.all('PRAGMA user_version'))[0].user_version,3);assert.equal((await db.all('PRAGMA foreign_keys'))[0].foreign_keys,1);assert.deepEqual(await db.all('PRAGMA foreign_key_check'),[]);
  await assert.rejects(db.run('INSERT INTO ledger_nodes VALUES(?,?,?,?,?,?)',[randomUUID(),randomUUID(),'USD','LIABILITY',null,runtime.now()]),/FOREIGN KEY/);
  } finally {raw.close();}
 });

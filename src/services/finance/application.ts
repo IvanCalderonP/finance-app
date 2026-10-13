@@ -1,3 +1,5 @@
+import { debtProjections } from './debt-projections.ts';
+import type { DebtSummary } from '../../financial-engine/debts.ts';
 import { cardProjections } from './card-projections.ts';
 import type { CardSummary } from '../../financial-engine/cards.ts';
 import { assert, currency, date, integer, total } from '../../financial-engine/model.ts';
@@ -15,8 +17,8 @@ export interface MovementInput extends BaseInput {
   accountId: string; amountMinor: number; categoryId?: string; toAccountId?: string; allowProtected?: boolean;
 }
 export interface FinanceSnapshot {
-  cards: CardSummary[]; accounts: AccountBalance[]; categories: Category[]; transactions: Transaction[];
-  totals: { currency: string; physicalMinor: number; cardDebtMinor: number; availableMinor: number; netWorthMinor: number; incomeMinor: number; expenseMinor: number }[];
+  cards: CardSummary[]; debts: DebtSummary[]; accounts: AccountBalance[]; categories: Category[]; transactions: Transaction[];
+  totals: { currency: string; physicalMinor: number; cardDebtMinor: number; payableMinor: number; receivableMinor: number; netWorthLiquidMinor: number; availableMinor: number; netWorthMinor: number; incomeMinor: number; expenseMinor: number }[];
 }
 function key(value: string) { assert(value.trim().length > 0 && value.length <= 180, 'Clave de operación inválida'); }
 async function requireAccount(repositories: Repositories, profileId: string, accountId: string) {
@@ -34,11 +36,17 @@ async function snapshot(repositories: Repositories, profileId: string, asOf: str
   const transactions = await repositories.transactions.list(profileId);
   const categories = await repositories.categories.list(profileId);
   const cards = await cardProjections(repositories, profileId, entries, transactions, asOf);
+  const debts = await debtProjections(repositories, profileId, entries, asOf);
+  const receivables = debts.filter(row => row.debt.direction === 'receivable').map(row => ({currency:row.debt.currency,amountMinor:row.pendingMinor}));
+  const payable = debts.filter(row => row.debt.direction === 'payable').map(row => ({id:row.debt.id,currency:row.debt.currency,amountMinor:row.pendingMinor,alreadyExcludedMinor:0}));
   const liabilities = cards.map(row => ({ id: row.card.id, currency: row.card.currency, amountMinor: row.debtMinor, alreadyExcludedMinor: 0 }));
-  return { cards, accounts: balances, categories, transactions,
-    totals: [...new Set([...accounts.map(row => row.currency), ...cards.map(row => row.card.currency)])].map(currency => ({
-      currency, cardDebtMinor: total(liabilities.filter(row => row.currency === currency).map(row => row.amountMinor)), physicalMinor: calculatePhysicalBalance(balances, currency), availableMinor: calculateAvailableBalance(balances, currency, liabilities),
-      netWorthMinor: calculateNetWorth(balances, currency, [], liabilities),
+  const commitments = [...liabilities,...payable];
+  return { cards, debts, accounts: balances, categories, transactions,
+    totals: [...new Set([...accounts.map(row => row.currency), ...cards.map(row => row.card.currency),...debts.map(row => row.debt.currency)])].map(currency => ({
+      currency, payableMinor: total(payable.filter(row => row.currency === currency).map(row => row.amountMinor)),
+      receivableMinor: total(receivables.filter(row => row.currency === currency).map(row => row.amountMinor)),
+      netWorthLiquidMinor: calculateNetWorth(balances,currency,[],commitments), cardDebtMinor: total(liabilities.filter(row => row.currency === currency).map(row => row.amountMinor)), physicalMinor: calculatePhysicalBalance(balances, currency), availableMinor: calculateAvailableBalance(balances, currency, commitments),
+      netWorthMinor: calculateNetWorth(balances, currency, receivables, commitments),
       incomeMinor: total(transactions.filter(row => row.currency === currency).flatMap(row => row.splits.filter(split => categories.some(category => category.id === split.categoryId && category.kind === 'INCOME')).map(split => split.amountMinor))),
       expenseMinor: total(transactions.filter(row => row.currency === currency).flatMap(row => row.splits.filter(split => categories.some(category => category.id === split.categoryId && category.kind === 'EXPENSE')).map(split => split.amountMinor))),
     })),
@@ -125,6 +133,7 @@ export function createFinanceApplication(unit: UnitOfWork, runtime: Runtime) {
       const original = await repositories.transactions.find(input.profileId, input.originalId);
       assert(original !== undefined, 'Movimiento inexistente en este perfil');
       assert(!(await repositories.cards.related(input.profileId, input.originalId)), 'Usa Tarjetas para revertir compras; reverso de pagos fuera de V1');
+      assert(!(await repositories.debts.related(input.profileId,input.originalId)), 'Usa Deudas para revertir este movimiento');
       assert(!(await repositories.transactions.reversedBy(input.profileId, input.originalId)), 'El movimiento ya fue revertido');
       const reversal = reverseTransaction(context(input), original);
       const entries = await repositories.ledger.entries(input.profileId);
