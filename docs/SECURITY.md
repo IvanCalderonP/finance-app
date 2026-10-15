@@ -1,6 +1,6 @@
 # Seguridad y privacidad
 
-Propósito: definir controles y límites antes de implementarlos. Estado: propuesta v1. PIN, biometría, secretos seguros, cifrado de SQLite y backups NO están implementados; la pantalla y la base técnica contienen únicamente muestras sintéticas fijas, sin datos financieros reales.
+Propósito: definir controles y límites. Estado: pruebas locales con datos sintéticos. PIN, biometría, almacén de llaves, cifrado de SQLite y backup financiero NO están implementados. Los formularios financieros admiten entradas libres, por lo que durante esta etapa solo deben usarse datos sintéticos. Ocultar montos en pantalla no cifra la base ni protege una notificación ya entregada.
 
 ## Modelo de amenazas
 
@@ -37,7 +37,7 @@ Admin permite identidad/estado de cuenta, plataforma, versión app, cloud habili
 
 Repositorios con SQL parametrizado, nunca concatenación de entradas. Esquema y reglas monetarias validados antes de confirmar; comprobar FKs, moneda/perfil, asientos, fondos, idempotencia y límites. Restore trata archivos como datos hostiles: no ejecutar SQL o código importado, rechazar formato inválido y límites excesivos. No imprimir backups ni movimientos en console/logs/errores. Auditoría financiera local puede registrar motivo/ID y reversos, sin envío remoto. Registro remoto solo técnico y opt-in cuando corresponda.
 
-Dependencias se revisan antes de distribución. La preparación reportó 29 avisos de auditoría del template: resolver con versiones compatibles o documentar evaluación real antes de publicar; no silenciar doctor/lint ni forzar degradaciones incompatibles. No instalar módulos de seguridad en esta fase documental.
+Dependencias se revisan antes de distribución. La instalación actual reportó 30 avisos de auditoría de dependencias: resolver con versiones compatibles o documentar evaluación real antes de publicar; no silenciar doctor/lint ni forzar degradaciones incompatibles. No añadir módulos de seguridad sin comprobar su compatibilidad y diseñar la migración cifrada.
 
 ## Notificaciones y automatización
 
@@ -49,6 +49,6 @@ Detector Android futuro requiere consentimiento granular y revocable para acceso
 
 Pruebas de bloqueo/fondo, intentos PIN, biometría cambiada, recuperación sin dispositivo original, migración cifrada/rollback, pérdida de llave, restore hostil, acceso entre perfiles/usuarios, revocación cloud, admin sin datos/llaves, logs sanitizados, temporales y exposición web. Definir comportamiento sin almacén seguro y sin soporte de cifrado antes de prometer protección. Toda decisión criptográfica concreta requiere revisión antes de implementar y probar con datos reales.
 
-## Restricción aprobada para fase 2
+## Restricción vigente durante el prototipo
 
-No almacenar datos financieros reales sin cifrado. El laboratorio no pide entradas financieras y su importador acepta solo campos/IDs sintéticos conocidos con valores enteros acotados. La etiqueta SYNTHETIC no es una clasificación automática de datos ni un control criptográfico; nunca reutilizar este formato o base para producción. No se implementan cifrado, Auth, Supabase, biometría ni admin en esta fase. Los permisos y diálogos locales solo sirven al ensayo de archivos.
+No almacenar datos financieros reales sin cifrado. El laboratorio no pide entradas financieras y su importador acepta solo campos/IDs sintéticos conocidos con valores enteros acotados. La etiqueta SYNTHETIC no es una clasificación automática de datos ni un control criptográfico; nunca reutilizar este formato o base para producción. No se implementan cifrado, Auth, Supabase, biometría ni admin en esta etapa. El permiso de notificaciones se solicita al activar recordatorios locales; los permisos de archivo del laboratorio solo sirven al ensayo sintético.

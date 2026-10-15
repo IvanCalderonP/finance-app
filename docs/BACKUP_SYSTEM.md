@@ -1,10 +1,10 @@
 # Sistema de backups y restauración
 
-Propósito: definir recuperación local y nube opcional sin convertir cloud en la base financiera. Estado: diseño v1, sin implementación, cifrado ni cuenta real configurados.
+Propósito: definir recuperación local y nube opcional sin convertir cloud en la base financiera. Estado: diseño de backup financiero; solo el laboratorio técnico permite exportar/restaurar muestras sintéticas. El backup financiero, cifrado y cuenta remota todavía no están configurados.
 
 ## Alcance y contenido
 
-Todo perfil, incluido LOCAL sin cuenta, puede exportar, importar y restaurar un archivo. Nombre base FinanceApp_Backup_YYYY-MM-DD; propuesta agregar hora/ID para evitar sobrescribir exportaciones del mismo día. Extensión final pendiente de especificación del formato.
+En el diseño final, cada perfil —incluido LOCAL sin cuenta— podrá exportar, importar y restaurar un archivo financiero. Nombre base propuesto: FinanceApp_Backup_YYYY-MM-DD más hora/ID para evitar sobrescrituras. El formato y la extensión definitivos siguen pendientes. Actualmente esta función solo existe para la base separada del laboratorio sintético.
 
 Propuesta de contenedor versionado: cabecera mínima (format_version, algoritmo/versión criptográfica, KDF, salt, nonce, tamaño); payload con manifest y dataset canónico. Dentro del payload: schema_version, versión app, plataforma, fecha UTC, perfil/origen local, conteos y checksum de integridad. Exportar cuentas, ledger/asientos, movimientos/desgloses, categorías, tarjetas/ciclos/aplicaciones, deudas/pagos, recibos/recurrencias, presupuestos, asignaciones/compromisos/historial, metas/aportes/reservas, otros activos, eventos y preferencias financieras. No exportar tokens, sesiones, contraseñas, PIN/verificadores locales, biometría, llaves sin envolver ni credenciales de Supabase. Las proyecciones, cachés remotas e identificadores de notificación se reconstruyen; backup_metadata evita incluir recursivamente archivos de backup.
 
@@ -12,7 +12,7 @@ No incluir nombre de persona, saldo ni concepto financiero en nombre de archivo,
 
 ## Formato, integridad y cifrado futuros
 
-La fase 2 autorizada utiliza exclusivamente datos sintéticos sin cifrar; debe identificarse como prototipo. Antes de datos reales o upload, implementar cifrado autenticado en dispositivo, compresión antes de cifrado, límites de tamaño y validación versionada. Algoritmo, librería y parámetros de KDF deben seleccionarse y revisarse en fase de seguridad, no crear criptografía propia.
+La app actual utiliza exclusivamente datos sintéticos sin cifrar; debe identificarse como prototipo. Antes de datos reales o upload, implementar cifrado autenticado en dispositivo, compresión antes de cifrado, límites de tamaño y validación versionada. Algoritmo, librería y parámetros de KDF deben seleccionarse y revisarse en fase de seguridad, no crear criptografía propia.
 
 El checksum detecta corrupción accidental, no sustituye autenticidad. AEAD valida contenido y cabecera asociada. Llave de respaldo distinta del token de Supabase y del PIN de UI; recuperable con material controlado por usuario (clave/frase de recuperación o envoltura por secreto independiente). Guardar la llave local en almacenamiento seguro según plataforma; no enviar llave o secreto de recuperación al admin/servidor. Un PIN corto solo no protege un archivo portable frente a fuerza bruta. Sin llave recuperable, pérdida del dispositivo puede hacer el backup irrecuperable; explicar y comprobar recuperación antes de habilitar cloud.
 
@@ -57,7 +57,7 @@ Download cloud recupera ciphertext, valida y descifra localmente, siguiendo el m
 
 Roundtrip sin pérdida; claves erróneas; corrupción y AEAD; esquema antiguo/futuro; zip bomb y límites; FKs/asientos inválidos; restore repetido; crash durante reemplazo; WAL activo; temporales; pérdida de conexión; revocación; acceso entre usuarios; rotaciones concurrentes; retención última/anterior; archivo de otro perfil; recuperación en dispositivo nuevo sin sesión original. Metadatos filtrados y pérdida de clave son riesgos aun con ciphertext correcto. Diseñar experiencia y recuperación antes de upload real.
 
-## Ensayo local fase 2
+## Ensayo local implementado en el laboratorio
 
 FinanceApp_SYNTHETIC_LAB.json es un formato de ensayo distinto del backup financiero futuro. Contiene únicamente kind, formatVersion=1, schemaVersion=1 y filas técnicas con IDs/campos fijos. Límite de 16 KB, validación de estructura, enteros, IDs, relaciones y ausencia de campos adicionales. No es un contenedor cifrado ni una implementación de cloud.
 

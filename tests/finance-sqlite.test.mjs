@@ -83,7 +83,7 @@ test('L: balances survive reopening and a separate Node process without seed',()
 test('profile isolation rejects foreign accounts, categories and SQL cross-profile FK',()=>fixture(async({app,profile,create,input,path})=>{
  const bank=await create('Bank',120000);const second=randomUUID();const db=adapter(path);await migrateFinance(db,runtime.now());
  const cat=randomUUID();await db.run('INSERT INTO profiles VALUES(?,?,?,?,?)',[second,'another','Another','USD',runtime.now()]);
- await db.run('INSERT INTO categories VALUES(?,?,?,?,?,?)',[cat,second,'Private','EXPENSE','private',runtime.now()]);
+ await db.run('INSERT INTO categories(id,profile_id,name,kind,code,created_at) VALUES(?,?,?,?,?,?)',[cat,second,'Private','EXPENSE','private',runtime.now()]);
  const foreign=await app.createAccount({profileId:second,name:'Foreign',type:'bank',currency:'USD',availabilityPolicy:'free',initialBalanceMinor:50000,effectiveDate:day,idempotencyKey:randomUUID()});
  await assert.rejects(app.post(input('TRANSFER',bank.id,100,{toAccountId:foreign.id})));
  await assert.rejects(app.post(input('EXPENSE',bank.id,100,{categoryId:cat})));
@@ -102,7 +102,7 @@ test('posted entries are immutable and posting unbalanced ledger is blocked by S
 }));
 test('migration is reproducible; no editable balance column exists',()=>fixture(async({app,path,create})=>{
  await create('Bank',100);await app.close();const db=adapter(path);await migrateFinance(db,runtime.now());await migrateFinance(db,runtime.now());
- assert.equal((await db.all('SELECT COUNT(*) AS n FROM schema_migrations'))[0].n,3);
+ assert.equal((await db.all('SELECT COUNT(*) AS n FROM schema_migrations'))[0].n,7);
  assert.ok((await db.all('PRAGMA table_info(accounts)')).every(row=>!row.name.includes('balance')));await db.close();
 }));
 test('protected and inactive accounts retain wealth; cross-currency transfer fails',()=>fixture(async({app,profile,create,input})=>{
@@ -129,7 +129,9 @@ test('reversal after optional expense breakdown keeps total and entries correct'
  await app.splitExpense(profile.id,tx.id,['Transporte','Comida','Otros'].map((name,index)=>({categoryId:data.categories.find(row=>row.name===name).id,amountMinor:index===2?1000:2000})));
  await app.reverse({profileId:profile.id,originalId:tx.id,effectiveDate:day,description:'Correct aggregate',idempotencyKey:randomUUID()});
  const final=await app.snapshot(profile.id);assert.equal(usd(final).expenseMinor,0);assert.equal(usd(final).physicalMinor,120000);assert.equal(final.transactions.length,3);
- await assert.rejects(app.splitExpense(profile.id,tx.id,[{categoryId:data.categories[0].id,amountMinor:5000}]));
+ await app.splitExpense(profile.id,tx.id,[{categoryId:data.categories[0].id,amountMinor:5000}]);
+ const reclassified=await app.snapshot(profile.id);assert.equal(usd(reclassified).expenseMinor,0);assert.equal(reclassified.transactions.length,3);
+ const changed=reclassified.transactions.find(row=>row.id===tx.id);const reversal=reclassified.transactions.find(row=>row.reversalOf===tx.id);assert.equal(changed.splits[0].amountMinor,5000);assert.equal(reversal.splits[0].amountMinor,-5000);
 }));
 test('Phase A: complete core validation sequence, restart, transfer, reversal and duplicates',()=>fixture(async({app,profile,create,input})=>{
  assert.equal((await app.initialProfile()).id,profile.id);

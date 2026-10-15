@@ -1,3 +1,6 @@
+import { sqlitePlanningRepository } from './planning-repositories.ts';
+import { sqliteBillingRepository } from './billing-repositories.ts';
+import { sqliteInsightsRepository } from './insights-repositories.ts';
 import { sqliteDebtRepository } from './debt-repositories.ts';
 import { sqliteCardRepository } from './card-repositories.ts';
 import type { Account, Category, Entry, LedgerNode, Profile, Split, Transaction } from '../../financial-engine/model.ts';
@@ -22,6 +25,7 @@ export function sqliteRepositories(db: SqlConnection, runtime: Runtime): Reposit
     };
   }
   const repositories: Repositories = {
+    planning:sqlitePlanningRepository(db),billing:sqliteBillingRepository(db,runtime),insights:sqliteInsightsRepository(db),
     cards: sqliteCardRepository(db, runtime),
     debts: sqliteDebtRepository(db,runtime),
     profiles: {
@@ -32,12 +36,18 @@ export function sqliteRepositories(db: SqlConnection, runtime: Runtime): Reposit
         await db.run('INSERT INTO profiles VALUES(?,?,?,?,?)', [profile.id, 'initial', profile.name, profile.currency, profile.createdAt]);
         const names = ['Comida', 'Transporte', 'Servicios', 'Compras', 'Entretenimiento', 'Gastos cotidianos', 'Otros'];
         for (const [index, name] of names.entries())
-          await db.run('INSERT INTO categories VALUES(?,?,?,?,?,?)', [runtime.id(), profile.id, name, 'EXPENSE', index === 5 ? 'daily' : `expense-${index}`, runtime.now()]);
-        await db.run('INSERT INTO categories VALUES(?,?,?,?,?,?)', [runtime.id(), profile.id, 'Ingresos', 'INCOME', 'income', runtime.now()]);
+          await db.run('INSERT INTO categories(id,profile_id,name,kind,code,created_at) VALUES(?,?,?,?,?,?)', [runtime.id(), profile.id, name, 'EXPENSE', index === 5 ? 'daily' : `expense-${index}`, runtime.now()]);
+        await db.run('INSERT INTO categories(id,profile_id,name,kind,code,created_at) VALUES(?,?,?,?,?,?)', [runtime.id(), profile.id, 'Ingresos', 'INCOME', 'income', runtime.now()]);
         return profile;
       },
     },
+    preferences:{
+      async get(profileId){const rows=await db.all<{theme:'light'|'dark'|'system';hide_amounts:number}>('SELECT theme,hide_amounts FROM app_preferences WHERE profile_id=?',[profileId]);return {theme:rows[0]?.theme??'system',hideAmounts:rows[0]?.hide_amounts===1};},
+      async set(profileId,value){await db.run('INSERT INTO app_preferences VALUES(?,?,?) ON CONFLICT(profile_id) DO UPDATE SET theme=excluded.theme,hide_amounts=excluded.hide_amounts',[profileId,value.theme,value.hideAmounts?1:0]);},
+    },
     accounts: {
+      policyHistory:profileId=>db.all('SELECT id,account_id AS accountId,effective_date AS effectiveDate,policy,created_at AS createdAt FROM account_availability_events WHERE profile_id=? ORDER BY effective_date,created_at,rowid',[profileId]),
+      async recordPolicy(profileId,event){await db.run('INSERT INTO account_availability_events VALUES(?,?,?,?,?,?)',[event.id,profileId,event.accountId,event.effectiveDate,event.policy,event.createdAt]);},
       async list(profileId) { return (await db.all<AccountRow>(`SELECT ${accountColumns} FROM accounts WHERE profile_id=? ORDER BY created_at,rowid`, [profileId])).map(account); },
       async find(profileId, id) { const rows = await db.all<AccountRow>(`SELECT ${accountColumns} FROM accounts WHERE profile_id=? AND id=?`, [profileId, id]); return rows[0] ? account(rows[0]) : undefined; },
       async byCreationKey(profileId, key) {
@@ -67,7 +77,13 @@ export function sqliteRepositories(db: SqlConnection, runtime: Runtime): Reposit
         return node;
       },
     },
-    categories: { async list(profileId) { return db.all<Category>('SELECT id,profile_id AS profileId,name,kind,code FROM categories WHERE profile_id=? ORDER BY rowid', [profileId]); } },
+    categories: {
+      list:profileId=>db.all<Category>('SELECT id,profile_id AS profileId,name,kind,code,parent_id AS parentId FROM categories WHERE profile_id=? ORDER BY rowid',[profileId]),
+      async byKey(profileId,key){const rows=await db.all<Category&{fingerprint:string}>('SELECT c.id,c.profile_id AS profileId,c.name,c.kind,c.code,c.parent_id AS parentId,r.fingerprint FROM category_requests r JOIN categories c ON c.id=r.category_id WHERE r.profile_id=? AND r.idempotency_key=?',[profileId,key]);if(!rows[0])return;const {fingerprint,...category}=rows[0];return {category,fingerprint};},
+      async insert(category,key,fingerprint){await db.run('INSERT INTO categories VALUES(?,?,?,?,?,?,?)',[category.id,category.profileId,category.name,category.kind,category.code,runtime.now(),category.parentId??null]);await db.run('INSERT INTO category_requests VALUES(?,?,?,?)',[category.profileId,key,category.id,fingerprint]);},
+      async rename(profileId,id,name){await db.run('UPDATE categories SET name=? WHERE profile_id=? AND id=?',[name,profileId,id]);},
+      async recordSplitEdit(profileId,transactionId,before,after){await db.run('INSERT INTO split_edits VALUES(?,?,?,?,?,?)',[runtime.id(),profileId,transactionId,JSON.stringify(before),JSON.stringify(after),runtime.now()]);},
+    },
     transactions: {
       async list(profileId) {
         const rows = await db.all<TransactionRow>(`SELECT ${transactionColumns} FROM transactions WHERE profile_id=? AND status='POSTED' ORDER BY effective_date DESC,created_at DESC,rowid DESC`, [profileId]);
@@ -104,7 +120,7 @@ export function sqliteRepositories(db: SqlConnection, runtime: Runtime): Reposit
   };
   return repositories;
 }
-export function createSqliteUnitOfWork(open: () => Promise<SqlConnection>, runtime: Runtime): UnitOfWork {
+export function createSqliteUnitOfWork(open: () => Promise<SqlConnection>, runtime: Runtime,afterCommit?:()=>void): UnitOfWork {
   let connection: SqlConnection | undefined;
   let tail: Promise<unknown> = Promise.resolve();
   function queue<T>(operation: () => Promise<T>): Promise<T> {
@@ -119,12 +135,15 @@ export function createSqliteUnitOfWork(open: () => Promise<SqlConnection>, runti
       }
       const db = connection;
       assert(db !== undefined, 'Conexión no disponible');
-      return atomic(db, async () => {
-        const result = await work(sqliteRepositories(db, runtime));
+      let wrote=false;
+      const tracked:SqlConnection={...db,run:async(sql,params)=>{wrote=true;await db.run(sql,params);},exec:async sql=>{if(!/^(BEGIN|COMMIT|ROLLBACK|PRAGMA|SELECT)/i.test(sql.trim()))wrote=true;await db.exec(sql);}};
+      const result=await atomic(db, async () => {
+        const result = await work(sqliteRepositories(tracked, runtime));
         const drafts = await db.all<{ count: number }>("SELECT COUNT(*) AS count FROM transactions WHERE status='DRAFT'");
         assert(drafts[0].count === 0, 'No se puede confirmar una operación incompleta');
         return result;
       });
+      if(wrote)afterCommit?.();return result;
     }),
     close: () => queue(async () => { if (connection) { await connection.close(); connection = undefined; } }),
   };

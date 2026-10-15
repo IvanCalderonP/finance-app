@@ -52,12 +52,9 @@ test('migration 003 preserves V2 rows and reenables FKs after a failed upgrade',
  const raw=new DatabaseSync(':memory:');
  const db={exec:async sql=>raw.exec(sql),run:async(sql,p=[])=>raw.prepare(sql).run(...p),all:async(sql,p=[])=>raw.prepare(sql).all(...p)};
  try{
-  raw.exec(MIGRATION_001);raw.exec('PRAGMA user_version=1');await migrateFinance(db,runtime.now());
-  // Recreate a V2 database by rolling back only the new empty schema in a test-owned connection.
-  raw.exec('PRAGMA foreign_keys=OFF');raw.exec('BEGIN');
-  for(const name of ['debt_node_kind','debt_event_node'])raw.exec(`DROP TRIGGER ${name}`);
-  for(const name of ['debt_events','debt_payments','debts','people'])raw.exec(`DROP TABLE ${name}`);
-  raw.exec('DELETE FROM schema_migrations WHERE version=3');raw.exec('PRAGMA user_version=2');raw.exec('COMMIT');raw.exec('PRAGMA foreign_keys=ON');
+  raw.exec(MIGRATION_001);raw.exec(MIGRATION_002);
+  raw.exec(MIGRATION_001.slice(MIGRATION_001.indexOf('CREATE TRIGGER post_balanced'),MIGRATION_001.indexOf('CREATE TRIGGER prevent_posted_insert')));
+  raw.exec('PRAGMA user_version=2');raw.exec('PRAGMA foreign_keys=ON');
   const existing=(await db.all('SELECT COUNT(*) AS n FROM credit_cards'))[0].n;
   const failing={...db,exec:async sql=>{raw.exec(sql);if(sql.includes('CREATE TABLE people'))throw Error('Injected migration 003');}};
   await assert.rejects(migrateFinance(failing,runtime.now()),/Injected/);
@@ -66,7 +63,7 @@ test('migration 003 preserves V2 rows and reenables FKs after a failed upgrade',
   assert.equal((await db.all("SELECT COUNT(*) AS n FROM sqlite_master WHERE name='people'"))[0].n,0);
   assert.equal((await db.all('SELECT COUNT(*) AS n FROM credit_cards'))[0].n,existing);
   await migrateFinance(db,runtime.now());await migrateFinance(db,runtime.now());
-  assert.equal((await db.all('PRAGMA user_version'))[0].user_version,3);
+  assert.equal((await db.all('PRAGMA user_version'))[0].user_version,7);
   assert.deepEqual(await db.all('PRAGMA foreign_key_check'),[]);
  }finally{raw.close();}
 });

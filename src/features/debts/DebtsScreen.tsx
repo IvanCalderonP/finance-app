@@ -1,6 +1,7 @@
-import { useFocusEffect } from 'expo-router';
+import { ThemePressable as Pressable, ThemeText as Text, ThemeView as View } from '@/components/appearance';
+import { useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useCallback, useRef, useState } from 'react';
-import { Pressable, StyleSheet, Switch, Text, View } from 'react-native';
+import { StyleSheet, Switch } from 'react-native';
 import { AppButton, Badge, Card, Chip, EmptyState, Field, FormSheet, Loading, Metric, Notice, Screen, SectionHeading, palette, ui } from '@/components/ui';
 import { displayDate, displayMoney, localToday } from '@/components/format';
 import type { DebtEvent, DebtOrigin, DebtSummary, Person } from '../../financial-engine/debts';
@@ -31,6 +32,7 @@ function eventLabel(event: DebtEvent, row: DebtSummary) {
 function initials(name: string) { return name.trim().split(/\s+/).slice(0, 2).map(word => word[0]).join('').toUpperCase(); }
 
 export default function DebtsScreen() {
+  const params=useLocalSearchParams<{debtId?:string}>();const incoming=useRef('');
   const [profileId, setProfileId] = useState('');
   const [snapshot, setSnapshot] = useState<FinanceSnapshot>();
   const [people, setPeople] = useState<Person[]>([]);
@@ -66,7 +68,8 @@ export default function DebtsScreen() {
     setProfileId(profile.id);
     const [data, persons] = await Promise.all([finance.snapshot(profile.id), debts.people(profile.id)]);
     setSnapshot(data); setPeople(persons);
-  }, []);
+    if(params.debtId&&incoming.current!==params.debtId){incoming.current=params.debtId;const row=data.debts.find(value=>value.debt.id===params.debtId);if(row){setSelected(row.debt.id);setTab(row.debt.direction);}}
+  }, [params.debtId]);
   useFocusEffect(useCallback(() => {
     void refresh().catch(error => {
       setMessage(error instanceof Error ? error.message : 'No se pudo abrir tu lista de deudas.');

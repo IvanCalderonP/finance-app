@@ -1,19 +1,20 @@
+import { ThemePressable as Pressable, ThemeScrollView as ScrollView, ThemeText as Text, ThemeTextInput as TextInput, ThemeView as View, useAppearance } from '@/components/appearance';
 import type { ReactNode } from 'react';
-import { ActivityIndicator, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, KeyboardAvoidingView, Modal, Platform, StyleSheet } from 'react-native';
 import type { StyleProp, ViewStyle } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 export const palette = { bg:'#F4F6F3',ink:'#142D2C',muted:'#62736A',primary:'#177D63',border:'#E2E8E2',white:'#FFFFFF',soft:'#E8F2EC',danger:'#B5473C',amber:'#A56E20' };
 export function Screen({title,subtitle,eyebrow,action,children}:{title:string;subtitle?:string;eyebrow?:string;action?:ReactNode;children:ReactNode}) {
  const insets=useSafeAreaInsets();
  return <ScrollView style={styles.screen} contentContainerStyle={{paddingTop:insets.top+24,paddingBottom:32}} keyboardShouldPersistTaps="handled"><View style={styles.container}>
-  <View style={styles.header}><View style={{flex:1}}><Text style={styles.eyebrow}>{eyebrow??'FINANCE · TU ESPACIO PERSONAL'}</Text><Text style={styles.title}>{title}</Text>{subtitle&&<Text style={styles.subtitle}>{subtitle}</Text>}</View>{action}</View>{children}
+  <View style={[styles.header,{flexWrap:'wrap'}]}><View style={{flex:1,minWidth:210}}><Text style={styles.eyebrow}>{eyebrow??'FINANCE · TU ESPACIO PERSONAL'}</Text><Text style={styles.title}>{title}</Text>{subtitle&&<Text style={styles.subtitle}>{subtitle}</Text>}</View>{action}</View>{children}
  </View></ScrollView>;
 }
 export function Card({children,style}:{children:ReactNode;style?:StyleProp<ViewStyle>}){return <View style={[styles.card,style]}>{children}</View>;}
 export function AppButton({title,onPress,variant='primary',disabled=false,icon,style}:{title:string;onPress:()=>void;variant?:'primary'|'secondary'|'ghost'|'danger';disabled?:boolean;icon?:string;style?:StyleProp<ViewStyle>}){
- const dark=variant==='primary'||variant==='danger';
+ const dark=variant==='primary'||variant==='danger';const appearance=useAppearance();const foreground=dark&&appearance.dark?'#101C19':dark?palette.white:palette.ink;
  return <Pressable accessibilityRole="button" accessibilityLabel={title} accessibilityState={{disabled}} disabled={disabled} onPress={onPress} style={({pressed})=>[styles.button,{backgroundColor:variant==='primary'?palette.primary:variant==='danger'?palette.danger:variant==='secondary'?palette.soft:'transparent',opacity:disabled?.42:pressed?.76:1},style]}>
-  {icon&&<Text style={{fontSize:19,color:dark?palette.white:palette.ink}}>{icon}</Text>}<Text style={[styles.buttonText,{color:dark?palette.white:palette.ink}]}>{title}</Text>
+  {icon&&<Text style={{fontSize:19,color:foreground}}>{icon}</Text>}<Text style={[styles.buttonText,{color:foreground}]}>{title}</Text>
  </Pressable>;
 }
 export function Chip({label,selected=false,onPress,disabled=false}:{label:string;selected?:boolean;onPress:()=>void;disabled?:boolean}){return <Pressable accessibilityRole="button" accessibilityState={{selected,disabled}} disabled={disabled} onPress={onPress} style={({pressed})=>[styles.chip,selected&&{backgroundColor:palette.ink,borderColor:palette.ink},{opacity:disabled?.45:pressed?.7:1}]}><Text style={{fontSize:13,fontWeight:'600',color:selected?palette.white:palette.ink}}>{label}</Text></Pressable>;}

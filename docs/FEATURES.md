@@ -1,74 +1,30 @@
-# Funcionalidades, navegación y fases
+# Funcionalidades y navegación
 
-Propósito: definir alcance sin construir todavía las funciones. Estado: propuesta v1. La pantalla actual incluye una UI mínima del núcleo financiero, sin diseño definitivo.
+Estado: versión local de prueba con datos sintéticos, 14 de octubre de 2026. La navegación principal es **Inicio, Movimientos, Calendario, Metas y Más**. Desde Más se abren Cuentas, Tarjetas, Deudas, Presupuestos, Recibos, Distribución, Reservas, Estadísticas, Categorías y preferencias.
 
-## Navegación propuesta
+## Uso actual
 
-Mantener Inicio, Movimientos, Calendario, Metas y Más. Inicio prioriza Disponible real; saldo físico y comprometido explican la cifra. Meta principal, tarjeta seleccionada, próximos pagos y presupuesto se presentan como resumen corto, no todas las tarjetas ni todas las categorías. Accesos rápidos: gasto, ingreso y transferencia; detalles y funciones avanzadas dentro de su módulo. No añadir pestaña Admin.
+Inicio concentra Disponible real, saldo físico, dinero comprometido, TC pendiente, Yo debo, Me deben, meta principal y hasta tres próximos pagos. Las acciones rápidas registran gasto, ingreso, gasto diario o compra TC. Las cuentas y movimientos detallados están en sus propias pantallas. Hay tema claro/oscuro/sistema y una preferencia persistente para ocultar importes en la interfaz.
 
-Más agrupa: dinero (cuentas, tarjetas, ingresos, deudas, reservas); planificación (presupuestos, recibos); análisis (estadísticas, gastos hormiga); aplicación (backups, seguridad y configuración). Auth se ofrece al activar servicios de cuenta/cloud, no bloquea el uso LOCAL. D negativo, compromisos sin fondos, moneda y vencimientos deben ser claros; revelar el cálculo del disponible al solicitar detalle.
+| Módulo | Funciona ahora |
+| --- | --- |
+| Cuentas y movimientos | Banco, efectivo, ahorro protegido, saldo contable, ingreso/gasto, transferencia, ajuste con motivo, gasto diario agregado, reverso e idempotencia. Retirar banco → efectivo es transferencia; gasto diario es gasto sin saldo efectivo ficticio. |
+| Desglose y categorías | Categorías/subcategorías personalizadas; división exacta de gastos bancarios, diarios y compras TC; edición y reversos sin asientos ni deuda duplicados. |
+| Tarjetas | Deuda inicial, compras, ciclos, corte inclusivo por fecha efectiva, vencimiento, pagos parciales/totales, corrección manual de ciclo y reverso permitido por las reglas V1. |
+| Deudas personales | Me deben / Yo debo, personas manuales, origen, cobros/pagos parciales, vencimiento y reversos. Disponible real excluye cuentas por cobrar; patrimonio ofrece ambas vistas. |
+| Presupuestos y apartados | Límite mensual/semanal/personalizado renovable, asignado/gastado/restante/exceso; financiación real separada, movimientos entre apartados y cierre con mantener, liberar o enviar sobrante financiado a meta. |
+| Recibos | Serie única/semanal/mensual/personalizada, esperado/real, vencimiento, reserva, pagos parciales de banco/TC, estado y siguiente instancia sin asiento automático. |
+| Distribución | Varias plantillas, cantidades fijas, porcentajes del ingreso original, prioridad, sobrante, previsualización, edición manual, insuficiencias y confirmación atómica. Puede usar ingreso existente una sola vez. |
+| Metas y reservas | Varias metas, historial/progreso/faltante/estimación, meta principal; reservas bloqueadas pasan a liberables en `unlock_on` y exigen confirmación. |
+| Calendario | Día/semana/mes; recibos, TC, deudas, ingresos previstos, metas, reservas y eventos. Ingreso previsto se enlaza al movimiento real. Preferencias y programación de notificaciones locales en Android/iOS. |
+| Estadísticas | Comparación mensual, categorías y método de pago, patrimonio/disponible/deuda TC histórica, presupuesto frente a gasto, aportes a metas, gastos pequeños y filtros. |
 
-## Alcance por módulo
+Los formularios muestran estados vacíos, validan importes y fechas y preservan la información financiera al cerrarse/reabrirse la base. Las notificaciones se sincronizan al entrar a la app o tras un cambio confirmado; el SO puede posponerlas. La web muestra calendario y datos mediante SQLite/WASM como prueba técnica separada, sin notificaciones nativas. El laboratorio ofrece exportación/restauración sintética; todavía no existe backup financiero cifrado.
 
-| Módulo | Capacidad prevista | Regla/limitación |
-| --- | --- | --- |
-| Cuentas | Banco, efectivo, ahorro y personalizadas; archivar, conciliación | Saldo desde asientos; transferencia no gasto |
-| Movimientos | Ingreso, gasto, traslado, principal de deuda/TC, ajustes, reversos y eventos virtuales | Una operación financiera central; desglose sin repetir gasto |
-| Tarjetas | Límites, deuda, crédito, ciclos, corte, vencimiento y pagos parciales | Gasto en compra; pago liquida, no vuelve a gastar |
-| Presupuestos/comida | Categorías, asignado, usado, restante, porcentaje, renovación | Presupuesto no reserva por sí mismo |
-| Cotidianos | Registro agregado opcional y posterior desglose | No exige cada dólar; no conservar efectivo ficticio |
-| Hormiga | Vista opcional de gastos pequeños | Una etiqueta de gastos existentes; umbral por definir |
-| Recibos | Esperado/real, frecuencia, vencimiento, reserva y pagos | Plantilla genera instancia, no pago automático |
-| Ingresos/distribución | Salario/extras, reglas fijas/porcentaje/prioridad/sobrante | Depósito propio no ingreso; asignaciones virtuales |
-| Metas | Múltiples, progreso, aportes, fecha y estimación | No son activos separados de cuentas |
-| Reservas | Fondos protegidos y plazo de bloqueo | Patrimonio sí; disponible no |
-| Deudas | ME DEBEN / YO DEBO, personas, parcialidades, notas y fechas | Por cobrar no efectivo; principal no gasto/ingreso |
-| Calendario | Cortes, pagos, recibos, deudas, ingresos previstos y metas | Evento previsto no movimiento realizado |
-| Estadísticas | Categorías, presupuestos, patrimonio y tendencias | TC al comprar; evitar sumar subtotales superpuestos |
-| Recordatorios/notificaciones | Recibos, TC, corte, deuda, presupuesto y meta | Permiso opcional; calendario funciona si se deniega |
-| Datos/backup | SQLite offline, exportar/importar/restaurar | Sin cuenta; restauración transaccional validada |
-| Seguridad | Bloqueo, secretos, privacidad y cifrado futuros | Capacidades distintas por plataforma |
-| Auth/cloud | Cuenta opcional, permiso remoto, backups manuales | No sincronización continua de movimientos |
-| Admin web separado | Usuarios, roles, permisos, testers, versiones, flags, soporte y métricas técnicas | Sin acceso financiero ni llaves de descifrado |
-| Automatización Android futura | Sugerir registrar/editar/ignorar notificación bancaria | Consentimiento, confirmación por operación, nunca registro silencioso |
+## Reglas visibles
 
-## Fases y puertas de salida
+Un presupuesto creado no reduce Disponible real; un apartado realmente financiado sí. Dinero en una cuenta protegida no se descuenta dos veces si respalda meta/reserva. Una compra TC es gasto y pasivo; el pago liquida pasivo, sin gasto nuevo. Un por cobrar no es efectivo disponible. Las fechas previstas no registran automáticamente gastos ni ingresos. Un vencimiento de reserva solo habilita la confirmación de liberación.
 
-1. **Cerrar reglas y contratos.** Revisar propuestas de FINANCIAL_RULES, esquema y seguridad, política de ahorro y por cobrar. Salida: casos numéricos aprobados y decisiones pendientes resueltas para el MVP.
-2. **Prueba técnica local multiplataforma.** Luego de autorización instalar solo SQLite necesario; validar native/web, persistencia, multi pestaña, cuotas, reinicio y carga offline. Evaluar límite real de Expo Go para seguridad futura. Salida: viabilidad SQLite web y recuperación por archivo demostradas; no asumir paridad.
-3. **Motor y persistencia mínimos.** Money/IDs, asientos, transacciones, repositorios, migraciones mínimas, idempotencia, reversos y tests críticos. Cuentas, ingresos, gastos y transferencias; exportación/restauración local básica antes de datos reales. Salida: invariantes y rollback probados.
-4. **Obligaciones y disponibilidad.** TC, ciclos, pagos, deudas, compromisos y cálculo disponible/patrimonio. Salida: tres casos TC y financiación de deuda sin doble descuento, pruebas offline.
-5. **Planificación y ahorro.** Presupuestos, cotidianos/desgloses, recibos recurrentes, distribución, metas y reservas. Salida: reserva pagada con TC, redondeo, insuficiencia y cuenta ahorro/meta sin duplicación.
-6. **Experiencia y recordatorios.** Pantallas simples de los módulos, calendario y estadísticas; accesibilidad, fechas, permisos y notificaciones. Salida: UX entendible, sin registros automáticos por recordatorio.
-7. **Endurecimiento de seguridad y backups.** Cifrado, manejo de llaves, recuperación, PIN/biometría donde proceda, bloqueo y privacidad. No publicar una versión con datos reales sin protección revisada, auditoría de dependencias y prueba de restauración.
-8. **Identidad/cloud opcional.** Supabase Auth/roles, Storage privado, upload manual cifrado, retención de dos copias y permisos verificados. Salida: un usuario no accede a otro y el servidor no dispone de llaves; trabajo local independiente de red.
-9. **Panel administrativo separado.** Roles/flags/soporte/estadísticas técnicas sin datos financieros. Sin monetización en este alcance.
-10. **Automatización Android opt-in.** Solo después de revisar permisos y privacidad: sugerencias locales, deduplicación y confirmación. Requiere build nativo y autorización de una nueva fase.
+## Límites para esta etapa
 
-Cada fase agrega tests de sus invariantes antes de ampliar funciones. No implementar todas las pruebas ahora. UI definitiva después del contrato financiero; la seguridad no se añade solo al final: separación de datos, secretos y registros se respeta desde fase 3.
-
-## Decisiones que requieren revisión
-
-Las decisiones V1 aprobadas son availability_policy free/protected sin duplicar metas/reservas, presupuesto sin descuento y apartado financiado con descuento, dos operaciones de efectivo, patrimonio con/sin por cobrar, ciclo por effective_date inclusivo con corrección manual, último día válido, sin ajustes por festivos y reserva liberable con confirmación. Pago TC se aplica al ciclo pendiente más antiguo; porcentajes sobre ingreso original siguen como propuesta. No hay integración bancaria automática.
-
-Fases implementadas: prueba técnica, núcleo financiero, tarjetas y deudas personales. Web continúa como evaluación separada; los demás módulos requieren nueva instrucción.
-
-## Riesgos principales
-
-Doble conteo por reservas/deudas/ciclos/metas; movimientos duplicados; cambios retroactivos; respaldo insuficiente; pérdida de SQLite/navegador; diferencias web/nativo; pérdida de llave; recordatorios limitados por OS; acceso offline no equivale a autorización cloud; restauración de una versión futura; backups manuales no son sincronización. Criterios de prueba y mitigaciones constan en los documentos específicos.
-
-## Flujo principal implementado
-
-Inicio ofrece Ingreso, Gasto, Gastos diarios y Transferir, además de crear cuentas. Gastos diarios registra un agregado desde banco bajo Gastos cotidianos, sin pedir remanente de efectivo. Transferir a efectivo requiere una cuenta cash creada expresamente. El seed de desarrollo contiene banco, ahorro protegido y secundaria, sin efectivo; es opcional y no se ejecuta al reiniciar. Tarjetas y deudas personales tienen secciones propias; los demás módulos avanzados siguen pendientes.
-
-## Tarjetas V1 disponibles
-
-Crear con deuda inicial, comprar con categorías compartidas, pago parcial/total, reverso total y corrección de ciclo con motivo. Lista, detalle, ciclos y desglose de pagos en /cards; Inicio muestra saldo físico, disponible real y deuda de tarjetas. UI provisional, únicamente datos sintéticos mientras no exista cifrado. Otros módulos permanecen pendientes.
-
-## Deudas personales V1 disponibles
-
-Personas manuales, ME DEBEN (préstamo y cobro), YO DEBO (obligación existente, préstamo recibido, compra financiada y pago), pagos parciales/totales, vencimiento/estado derivado e historial con reversos seguros. Inicio muestra Disponible real, saldo físico, TC, YO DEBO, ME DEBEN y dos vistas de patrimonio. UI provisional.
-
-## Interfaz para revisión
-
-Navegación inferior con Inicio, Cuentas, Movimientos, Tarjetas y Deudas. Diseño verde/crema, formularios modales, búsqueda y filtros de movimientos, detalle y desglose por categorías, listas/detalles de tarjeta y deuda. Carga explícita de un ejemplo sintético de los módulos existentes, sin borrar datos, con claves estables para reintentos. Sin dependencias adicionales.
+Se usan únicamente datos sintéticos porque SQLite financiero no está cifrado. No hay Auth, Supabase, sincronización, backup financiero real, biometría, panel Admin ni lectura de notificaciones bancarias. El panel Admin está diseñado como proyecto web separado, sin acceso a contenido financiero. Android físico había validado anteriormente el núcleo y tarjetas; la interfaz y notificaciones añadidas aquí necesitan revisión en teléfono. Web requiere pruebas adicionales de persistencia bajo varias pestañas, cuota, modo privado y arranque offline. Ver [SECURITY.md](SECURITY.md) y [ARCHITECTURE.md](ARCHITECTURE.md).

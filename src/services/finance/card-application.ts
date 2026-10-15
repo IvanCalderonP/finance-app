@@ -1,6 +1,9 @@
+import { runtimeDay } from './contracts.ts';
+import { canonicalJson } from '../../utils/canonical.ts';
+import type { FundingOwner } from '../../financial-engine/planning.ts';
+import { consumeFunding, spendability, restoreConsumption, reconcileLiabilityFunding, validateFunding } from './planning-application.ts';
 import { assert, currency, date, integer, total } from '../../financial-engine/model.ts';
 import type { Context, Transaction } from '../../financial-engine/model.ts';
-import { calculateAccountBalance } from '../../financial-engine/calculations.ts';
 import { reverseTransaction } from '../../financial-engine/commands.ts';
 import { calculateCreditCardDebt, cycleForDate, rebuildPaymentApplications, registerCreditCardOpening, registerCreditCardPurchase, payCreditCard } from '../../financial-engine/cards.ts';
 import type { CreditCard } from '../../financial-engine/cards.ts';
@@ -10,10 +13,10 @@ interface Base { profileId: string; idempotencyKey: string; effectiveDate: strin
 export interface CreateCardInput extends Base {
   name: string; currency: string; limitMinor: number; initialDebtMinor: number; closingDay: number; dueDay: number; defaultAccountId: string | null;
 }
-export interface PurchaseCardInput extends Base { cardId: string; amountMinor: number; categoryId: string }
+export interface PurchaseCardInput extends Base { fundingOwner?:FundingOwner; cardId: string; amountMinor: number; categoryId: string }
 export interface PayCardInput extends Base { cardId: string; accountId: string; full: boolean; amountMinor?: number; allowProtected?: boolean }
 function fingerprint(operation: string, input: object) {
-  const normalized = { ...input, operation }; return JSON.stringify(normalized, Object.keys(normalized).sort());
+  const normalized = { ...input, operation }; return canonicalJson(normalized);
 }
 async function requireCard(repositories: Repositories, profileId: string, cardId: string) {
   const card = await repositories.cards.find(profileId, cardId); assert(card !== undefined, 'Tarjeta inexistente en este perfil'); return card;
@@ -49,7 +52,7 @@ export function createCreditCardApplication(unit: UnitOfWork, runtime: Runtime) 
     await reconcile(repositories, card);
   }
   return {
-    snapshot: (profileId: string, asOf = runtime.now().slice(0, 10)) => unit.execute(async repositories => {
+    snapshot: (profileId: string, asOf = runtimeDay(runtime)) => unit.execute(async repositories => {
       date(asOf); return cardProjections(repositories, profileId, await repositories.ledger.entries(profileId), await repositories.transactions.list(profileId), asOf);
     }),
     create: (input: CreateCardInput) => unit.execute(async repositories => {
@@ -83,7 +86,9 @@ export function createCreditCardApplication(unit: UnitOfWork, runtime: Runtime) 
       assert(categories.some(row => row.id === input.categoryId && row.kind === 'EXPENSE'), 'Categoría de gasto inválida');
       const debt = calculateCreditCardDebt(card, await repositories.ledger.entries(input.profileId));
       const transaction = registerCreditCardPurchase(ctx(input), card, input.amountMinor, debt, await repositories.ledger.systemNode(input.profileId, card.currency, 'EXPENSE'), input.categoryId);
-      await repositories.transactions.insert(transaction, hash); await attach(repositories, card, transaction); return transaction;
+      await repositories.transactions.insert(transaction, hash); await attach(repositories, card, transaction);
+      await consumeFunding(repositories,runtime,{profileId:input.profileId,amountMinor:input.amountMinor,transactionId:transaction.id,owner:input.fundingOwner,categoryAmounts:transaction.splits,toLiability:{kind:'card',targetId:card.id}});
+      await validateFunding(repositories,input.profileId);return transaction;
     }),
     pay: (input: PayCardInput) => unit.execute(async repositories => {
       const normalized = { ...input, amountMinor: input.full ? undefined : input.amountMinor, description: input.description.trim(), allowProtected: input.allowProtected ?? false };
@@ -92,9 +97,10 @@ export function createCreditCardApplication(unit: UnitOfWork, runtime: Runtime) 
       const account = await repositories.accounts.find(input.profileId, input.accountId); assert(account !== undefined, 'Cuenta de pago inexistente');
       const entries = await repositories.ledger.entries(input.profileId);
       const debt = calculateCreditCardDebt(card, entries); const amount = input.full ? debt : input.amountMinor; assert(amount !== undefined, 'Indica el monto');
-      const transaction = payCreditCard(ctx(input), card, account, amount, debt, calculateAccountBalance(account, entries), input.allowProtected);
+      const transaction = payCreditCard(ctx(input), card, account, amount, debt, await spendability(repositories,input.profileId,account.id,{kind:'card',targetId:card.id}), input.allowProtected);
       await repositories.transactions.insert(transaction, hash); await repositories.cards.addPayment(input.profileId, card, transaction.id, account.id);
-      await reconcile(repositories, card); return transaction;
+      await consumeFunding(repositories,runtime,{profileId:input.profileId,accountId:account.id,amountMinor:amount,transactionId:transaction.id,owner:{kind:'card',targetId:card.id}});
+      await reconcile(repositories, card);await reconcileLiabilityFunding(repositories,runtime,input.profileId,input.effectiveDate,transaction.id);await validateFunding(repositories,input.profileId); return transaction;
     }),
     reversePurchase: (input: Base & { cardId: string; originalId: string }) => unit.execute(async repositories => {
       const hash = fingerprint('reverse-card-purchase', { ...input, description: input.description.trim() }); const previous = await duplicate(repositories, input, hash); if (previous) return previous;
@@ -105,7 +111,7 @@ export function createCreditCardApplication(unit: UnitOfWork, runtime: Runtime) 
       const data = await repositories.cards.data(input.profileId, card.id); const charge = data.charges.find(row => row.transactionId === original.id);
       assert(charge !== undefined && charge.amountMinor > 0, 'La compra no pertenece a esta tarjeta');
       assert(calculateCreditCardDebt(card, await repositories.ledger.entries(input.profileId)) >= charge.amountMinor, 'El reverso produciría saldo acreedor; ese flujo queda fuera de V1');
-      const reversal = reverseTransaction(ctx(input), original); await repositories.transactions.insert(reversal, hash); await attach(repositories, card, reversal, charge.cycleId); return reversal;
+      const reversal = reverseTransaction(ctx(input), original); await repositories.transactions.insert(reversal, hash); await attach(repositories, card, reversal, charge.cycleId);await restoreConsumption(repositories,runtime,input.profileId,original.id,reversal.id);await reconcileLiabilityFunding(repositories,runtime,input.profileId,input.effectiveDate,reversal.id);await validateFunding(repositories,input.profileId); return reversal;
     }),
     reassignCycle: (input: { profileId: string; cardId: string; originalId: string; cycleDate: string; reason: string }) => unit.execute(async repositories => {
       const card = await requireCard(repositories, input.profileId, input.cardId);

@@ -1,3 +1,6 @@
+import { runtimeDay } from './contracts.ts';
+import { canonicalJson } from '../../utils/canonical.ts';
+import { spendability, consumeFunding, restoreConsumption, reconcileLiabilityFunding, validateFunding } from './planning-application.ts';
 import { assert, currency, date, integer, total } from '../../financial-engine/model.ts';
 import type { Context, Transaction } from '../../financial-engine/model.ts';
 import { calculateAccountBalance } from '../../financial-engine/calculations.ts';
@@ -10,7 +13,7 @@ interface Base { profileId:string; idempotencyKey:string; effectiveDate:string; 
 export interface CreatePersonInput { profileId:string; idempotencyKey:string; name:string; note:string }
 export interface CreateDebtInput extends Base { personId:string; originKind:DebtOrigin; currency:string; initialMinor:number; concept:string; dueOn:string|null; notes:string; accountId?:string; categoryId?:string; allowProtected?:boolean }
 export interface SettleDebtInput extends Base { debtId:string; accountId:string; amountMinor?:number; full:boolean; allowProtected?:boolean }
-function fingerprint(operation:string,input:object){const normalized={...input,operation};return JSON.stringify(normalized,Object.keys(normalized).sort());}
+function fingerprint(operation:string,input:object){const normalized={...input,operation};return canonicalJson(normalized);}
 function key(value:string){assert(value.trim().length>0 && value.length<=180,'Clave inválida');}
 async function requiredDebt(repositories:Repositories,profileId:string,debtId:string){const debt=await repositories.debts.find(profileId,debtId);assert(debt!==undefined,'Deuda inexistente en este perfil');return debt;}
 async function validateDebt(repositories:Repositories,debt:Debt){
@@ -28,7 +31,7 @@ export function createDebtApplication(unit:UnitOfWork,runtime:Runtime){
  function ctx(input:Base):Context{key(input.idempotencyKey);date(input.effectiveDate);return {id:runtime.id(),profileId:input.profileId,idempotencyKey:input.idempotencyKey,effectiveDate:input.effectiveDate,createdAt:runtime.now(),description:input.description.trim()};}
  async function priorTransaction(repositories:Repositories,input:Base,hash:string){const previous=await repositories.transactions.byKey(input.profileId,input.idempotencyKey);if(previous){assert(previous.fingerprint===hash,'Clave usada para otra operación');return previous.transaction;}}
  return {
-  snapshot:(profileId:string,asOf=runtime.now().slice(0,10))=>unit.execute(async repositories=>{date(asOf);return debtProjections(repositories,profileId,await repositories.ledger.entries(profileId),asOf);}),
+  snapshot:(profileId:string,asOf=runtimeDay(runtime))=>unit.execute(async repositories=>{date(asOf);return debtProjections(repositories,profileId,await repositories.ledger.entries(profileId),asOf);}),
   people:(profileId:string)=>unit.execute(repositories=>repositories.debts.listPeople(profileId)),
   createPerson:(input:CreatePersonInput)=>unit.execute(async repositories=>{
    key(input.idempotencyKey);const normalized={...input,name:input.name.trim(),note:input.note.trim()};const hash=fingerprint('person',normalized);
@@ -59,12 +62,12 @@ export function createDebtApplication(unit:UnitOfWork,runtime:Runtime){
    } else {
     assert(input.accountId!==undefined,'Selecciona una cuenta');
     const account=await repositories.accounts.find(input.profileId,input.accountId);assert(account!==undefined,'Cuenta inexistente');
-    transaction=input.originKind==='loan_given'?registerLoanGiven(context,debt,account,calculateAccountBalance(account,await repositories.ledger.entries(input.profileId)),input.allowProtected):registerLoanReceived(context,debt,account);
+    transaction=input.originKind==='loan_given'?registerLoanGiven(context,debt,account,await spendability(repositories,input.profileId,account.id),input.allowProtected):registerLoanReceived(context,debt,account);
    }
    await repositories.transactions.insert(transaction,hash);
    await repositories.debts.insert(debt,input.idempotencyKey,hash);
    await repositories.debts.addEvent(input.profileId,debt.id,transaction.id,'ORIGIN');
-   await validateDebt(repositories,debt);return debt;
+   await validateDebt(repositories,debt);await validateFunding(repositories,input.profileId);return debt;
   }),
   settle:(input:SettleDebtInput)=>unit.execute(async repositories=>{
    const normalized={...input,description:input.description.trim(),amountMinor:input.full?undefined:input.amountMinor,allowProtected:input.allowProtected??false};
@@ -73,11 +76,12 @@ export function createDebtApplication(unit:UnitOfWork,runtime:Runtime){
    const account=await repositories.accounts.find(input.profileId,input.accountId);assert(account!==undefined,'Cuenta inexistente');
    const entries=await repositories.ledger.entries(input.profileId);const pending=calculateDebtPending(debt,entries);
    const amount=input.full?pending:input.amountMinor;assert(amount!==undefined,'Indica el principal');
-   const transaction=settleDebt(ctx(input),debt,amount,pending,account,calculateAccountBalance(account,entries),input.allowProtected);
+   const transaction=settleDebt(ctx(input),debt,amount,pending,account,debt.direction==='payable'?await spendability(repositories,input.profileId,account.id,{kind:'debt',targetId:debt.id}):calculateAccountBalance(account,entries),input.allowProtected);
    await repositories.transactions.insert(transaction,hash);
    await repositories.debts.addPayment(input.profileId,debt,transaction.id,account.id);
    await repositories.debts.addEvent(input.profileId,debt.id,transaction.id,'PAYMENT');
-   await validateDebt(repositories,debt);return transaction;
+   if(debt.direction==='payable')await consumeFunding(repositories,runtime,{profileId:input.profileId,accountId:account.id,amountMinor:amount,transactionId:transaction.id,owner:{kind:'debt',targetId:debt.id}});
+   await validateDebt(repositories,debt);await reconcileLiabilityFunding(repositories,runtime,input.profileId,input.effectiveDate,transaction.id);await validateFunding(repositories,input.profileId);return transaction;
   }),
   reverse:(input:Base&{debtId:string;originalId:string})=>unit.execute(async repositories=>{
    const hash=fingerprint('reverse-debt',{...input,description:input.description.trim()});const previous=await priorTransaction(repositories,input,hash);if(previous)return previous;
@@ -93,7 +97,8 @@ export function createDebtApplication(unit:UnitOfWork,runtime:Runtime){
    }
    await repositories.transactions.insert(reversal,hash);
    await repositories.debts.addEvent(input.profileId,debt.id,reversal.id,'REVERSAL');
-   await validateDebt(repositories,debt);return reversal;
+   await restoreConsumption(repositories,runtime,input.profileId,original.id,reversal.id);
+   await validateDebt(repositories,debt);await reconcileLiabilityFunding(repositories,runtime,input.profileId,input.effectiveDate,reversal.id);await validateFunding(repositories,input.profileId);return reversal;
   }),
  };
 }

@@ -1,6 +1,6 @@
 # Reglas financieras y casos de prueba
 
-Propósito: establecer invariantes de negocio y evitar doble conteo. Estado: arquitectura general y decisiones V1 aprobadas el 2026-10-12; los puntos aún no resueltos se identifican como propuestas. El núcleo local mínimo ya implementa cuentas, ledger e ingresos/gastos/transferencias; los módulos avanzados siguen pendientes.
+Propósito: establecer invariantes de negocio y evitar doble conteo. Estado: reglas V1 aprobadas e implementadas en los módulos locales de cuentas, tarjetas, deudas, presupuestos, apartados, recibos, distribución, metas, calendario y estadísticas (14 de octubre de 2026). Las excepciones de seguridad y operaciones avanzadas permanecen pendientes.
 
 ## Magnitudes por moneda
 
@@ -39,11 +39,11 @@ Comisiones, intereses y penalidades se reconocen como gastos nuevos explícitos;
 
 Crédito disponible = límite − deuda utilizada neta; no es saldo físico ni disponible real. Se permiten pagos parciales, total y múltiples tarjetas. Primera fase: rechazar sobrepago de deuda; un saldo acreedor requerirá regla explícita futura. No ocultar deuda superior al límite; mostrar exceso y bloquear nuevas compras manuales que excedan límite salvo decisión explícita futura.
 
-El ciclo resume movimientos de tarjeta; no es otra deuda adicional a L. Separar saldo de corte, compras posteriores, pagos aplicados y pendiente total. Propuesta: asignar pagos a los ciclos más antiguos pendientes con desglose persistido; revisión de política antes de construir. El pago mínimo no sustituye deuda total en D. Cambiar día de corte no reescribe ciclos cerrados. En V1 effective_date asigna la compra: hasta corte inclusive pertenece al ciclo que cierra ese día; después pertenece al siguiente. Si el día no existe, usar el último válido del mes. No ajustar fines de semana ni feriados. La corrección manual de ciclo cambia únicamente la asociación temporal y recalcula resúmenes de ambos ciclos; preserva el mismo asiento, deuda y gasto. Registrar ciclo anterior/nuevo y motivo, sin duplicar compra.
+El ciclo resume movimientos de tarjeta; no es otra deuda adicional a L. Separar saldo de corte, compras posteriores, pagos aplicados y pendiente total. Implementación: aplicar pagos a los ciclos más antiguos pendientes con desglose persistido. El pago mínimo no sustituye deuda total en D. Cambiar día de corte no reescribe ciclos cerrados. En V1 effective_date asigna la compra: hasta corte inclusive pertenece al ciclo que cierra ese día; después pertenece al siguiente. Si el día no existe, usar el último válido del mes. No ajustar fines de semana ni feriados. La corrección manual de ciclo cambia únicamente la asociación temporal y recalcula resúmenes de ambos ciclos; preserva el mismo asiento, deuda y gasto. Registrar ciclo anterior/nuevo y motivo, sin duplicar compra.
 
 Recibo recurrente = plantilla; recibo del período = instancia. Un importe esperado no es un gasto. Pendiente y vencido sin reserva son previsión; reservado incorpora su importe a H. Mostrar previsiones no financiadas separadas. No asumir que cada recibo pendiente es deuda contable. Si se reconoce como deuda, convertir reserva en el mismo compromiso pasivo. Pago crea gasto una sola vez y consume el compromiso correspondiente. Con TC crea deuda TC y consume la reserva. Si monto real difiere del reservado, liberar sobrante o descontar diferencia; nunca conservar reserva de un recibo ya pagado.
 
-Pago parcial de recibo: mantener total real, pagado acumulado y saldo residual; estado pagado solo si residual cero. Propuesta de estado derivado: pagado si cero; vencido si venció con residual; reservado si no vencido y tiene fondos; pendiente en otro caso. El importe reservado se muestra además para no perderlo al vencer. Un pago parcial con TC convierte únicamente la porción pagada en deuda TC. Generación recurrente idempotente por plantilla/fecha; no crea movimientos de dinero automáticamente.
+Pago parcial de recibo: mantener total real, pagado acumulado y saldo residual; estado pagado solo si residual cero. Estado derivado: pagado si cero; vencido si venció con residual; reservado si no vencido y tiene fondos; pendiente en otro caso. El importe reservado se muestra además para no perderlo al vencer. Un pago parcial con TC convierte únicamente la porción pagada en deuda TC. Generación recurrente idempotente por plantilla/fecha; no crea movimientos de dinero automáticamente.
 
 ## Presupuestos, efectivo y gastos hormiga
 
@@ -51,29 +51,31 @@ Presupuesto = límite por categoría/período; restante = asignado − gasto net
 
 Un presupuesto no reduce D por existir. Solo una asignación financiada crea H, consumido por gastos enlazados. Cuando hay gasto cubierto, S o L cambia y H baja por la misma porción: esa cantidad ya no era libre antes de gastar.
 
+Editar el desglose de un gasto ya pagado modifica estadísticas y gasto de presupuesto, pero conserva el historial del apartado que realmente financió la compra. No se restauran fondos gastados por una simple reclasificación: podrían superar el saldo físico posterior. Una reasignación de fondos aún existentes se registra como movimiento de apartados con validación de saldo.
+
 Operación A, Retirar a efectivo: transferencia banco → efectivo, sin gasto. Operación B, Retiro para gastos diarios (gasto cotidiano agregado de $50): registrar gasto desde la cuenta origen o consumir efectivo ya retirado, según elección; no crear a la vez efectivo disponible +$50. No obligar a detallar. Si después desglosa transporte $20 y comida $30, reemplazar las líneas de categoría del mismo gasto, sin nuevos asientos ni nuevos gastos. Si conserva dinero en efectivo tras registrar todo como gasto, debe corregir el agregado explícitamente; la app no puede conocer el remanente sin entrada del usuario.
 
-Gastos hormiga son una etiqueta o vista del gasto existente, no otro movimiento ni categoría adicional sumable al total. Propuesta: umbral configurable por moneda y etiqueta opcional; no elegir un umbral financiero sin usuario. El total mensual cuenta cada línea una vez.
+Gastos hormiga son una etiqueta o vista del gasto existente, no otro movimiento ni categoría adicional sumable al total. El umbral es configurable por moneda; el valor inicial de prueba es menos de $5 (500 centavos) y puede modificarse. La vista no crea una segunda categoría o transacción. El total mensual cuenta cada línea una vez.
 
 ## Distribución, metas y reservas
 
-Distribución configurable por prioridades, importes fijos y porcentajes. Propuesta determinista: porcentaje sobre el ingreso original; cantidades redondeadas en unidades menores; mismo orden por prioridad e ID estable; respetar sobrante efectivo, no asignar cantidades negativas ni más que el ingreso. Mostrar asignaciones parciales e insuficiencia antes de confirmar. El destino del sobrante recibe el resto exacto. Si los porcentajes solicitados superan 100%, rechazar configuración. No asignar dinero aún comprometido a un segundo destino: lo destinado a deuda es etiquetar su financiación, no crear nueva H. Toda asignación confirma efectos virtuales atómicamente; nunca transfiere dinero ni paga obligaciones sin acción separada.
+Distribución configurable por prioridades, importes fijos y porcentajes. Implementación determinista: porcentaje sobre el ingreso original; cantidades redondeadas en unidades menores; mismo orden por prioridad e ID estable; respetar sobrante efectivo, no asignar cantidades negativas ni más que el ingreso. Mostrar asignaciones parciales e insuficiencia antes de confirmar. El destino del sobrante recibe el resto exacto. Si los porcentajes solicitados superan 100%, rechazar configuración. No asignar dinero aún comprometido a un segundo destino: lo destinado a deuda es etiquetar su financiación, no crear nueva H. Toda asignación confirma efectos virtuales atómicamente; nunca transfiere dinero ni paga obligaciones sin acción separada.
 
 Ejemplo $1,000: TC 100 + comida 180 + recibos 90 + transporte 60 + libre 100 + moto 470 = 1,000. TC 100 ya incluido en L no descuenta otra vez; libre no crea H; los demás destinos financiados sí. Si todas esas porciones están reservadas, D queda 100; no asumir que existe ese compromiso por crear un presupuesto sin financiarlo.
 
-Ahorro de meta = saldo de compromisos vinculados, respaldados en cuentas; aportes y retiros son historial, no activos nuevos. Progreso actual puede disminuir al liberar fondos. Estimación usa aportes netos por meses completos observados; sin historial suficiente o promedio <= 0 mostrar sin estimación. No prometer rendimiento ni fecha garantizada.
+Ahorro de meta = saldo de compromisos vinculados, respaldados en cuentas; aportes y retiros son historial, no activos nuevos. Progreso actual puede disminuir al liberar fondos. La estimación usa el ritmo neto observado desde la creación; si no hay avance neto suficiente, se muestra sin fecha estimada. No prometer rendimiento ni fecha garantizada.
 
 Reserva bloqueada cuenta en S y N, no en D. Crear una reserva con $200 existentes no aumenta N; incorporar $200 nuevos desde fuera y bloquearlos sí aumenta N sin aumentar D. Esta distinción corrige la ambigüedad del caso 6 solicitado. Decisión aprobada: unlock_on vencido vuelve la reserva liberable; nunca libera automáticamente y requiere confirmación del usuario. Reglas de excepción a bloqueo pendientes de aprobación.
 
 ## Invariantes y casos límite
 
-Todas las operaciones confirmadas son atómicas, idempotentes y reversibles por movimiento de reverso; nunca borrar solo una pata de transferencia/pago. Reversar gasto resta su impacto de categoría y deuda/cuenta, con tratamiento explícito del compromiso consumido. Si operaciones posteriores impiden el reverso, exigir plan validado, no inventar saldo. Ajustes de conciliación no ocultan gastos faltantes. Cuenta inactiva sigue en patrimonio y deudas; archivar no destruye saldo ni historial.
+Las operaciones financieras confirmadas son atómicas e idempotentes; los reversos disponibles preservan originales y asientos opuestos. Algunas correcciones (por ejemplo reembolso parcial de TC) aún requieren una operación específica; nunca borrar solo una pata de transferencia/pago. Reversar gasto resta su impacto de categoría y deuda/cuenta, con tratamiento explícito del compromiso consumido. Si operaciones posteriores impiden el reverso, exigir plan validado, no inventar saldo. Ajustes de conciliación no ocultan gastos faltantes. Cuenta inactiva sigue en patrimonio y deudas; archivar no destruye saldo ni historial.
 
 Prohibir fondos asignados por encima de recursos positivos de su cuenta y moneda; préstamos pendientes pueden producir D negativo sin reservas ficticias. Gastar fondos comprometidos exige liberar o reasignar y confirmar; no hacerlo silenciosamente. No compensar cuentas entre monedas ni transferir entre monedas sin regla de cambio. D agregado no reemplaza la validación de liquidez de la cuenta de pago.
 
 Casos a cerrar: meses de 28/29/30/31 días (último día válido aprobado), sin ajuste por fines de semana/feriados, compras de corte inclusivo por effective_date (aprobado), zonas horarias, importes cero/negativos, overflow, entrada duplicada, doble tap, fechas retroactivas, presupuesto agotado, pago desde ahorro, recibo vencido parcialmente reservado, reembolso antes/después de liquidar TC, deuda perdonada y restauración repetida. Ajuste de gasto histórico debe recalcular presupuesto/ciclo y validar compromisos posteriores.
 
-## Matriz de pruebas futuras (no implementada)
+## Matriz de invariantes y casos de prueba
 
 | Caso | Resultado obligatorio |
 | --- | --- |
@@ -99,17 +101,17 @@ Casos a cerrar: meses de 28/29/30/31 días (último día válido aprobado), sin 
 | Doble ejecución y fallo entre asientos | Un efecto por operación o rollback completo |
 | Repetir recurrencia/restauración; cambio de fecha | Sin instancias duplicadas ni acumulación de saldos |
 
-Añadir pruebas de propiedades: transferencias conservan patrimonio; liquidar principal conserva D; reconstrucción igual a proyecciones; financiación exclusiva por unidad monetaria; ninguna asignación crea dinero. Estas reglas preceden a implementación y UI final.
+Las pruebas actuales cubren movimientos, reversos, financiación exclusiva, migraciones, recibos, distribución, calendario, estadísticas y reinicio local. La prueba física de la interfaz ampliada y los casos de seguridad deben completarse antes de tratar datos reales.
 
 ## Regla implementada del flujo principal
 
 Retiro para gastos cotidianos se registra como EXPENSE/subtype daily: banco disminuye, categoría Gastos cotidianos aumenta y no se crea efectivo. El perfil LOCAL y la carga de desarrollo no crean cuentas cash. La transferencia a una cuenta cash que el usuario cree explícitamente sigue siendo TRANSFER, sin ingreso/gasto. Desglosar un gasto sustituye sus líneas de categoría; conserva transaction_entries y el importe total. Un reverso posterior usa las categorías actuales y sus importes opuestos.
 
-Disponible real: suma de cuentas menos saldos positivos protected y pasivos pendientes de TC y deudas personales; los saldos negativos siguen visibles como déficit. Los compromisos poseen identidad y porción ya excluida para evitar doble descuento al financiar reservas futuras. Transferir free→protected conserva patrimonio y reduce disponible. Los reversos que empeoran una cuenta por debajo de cero se rechazan; ajustes con motivo permiten conciliación explícita.
+Disponible real: suma de cuentas menos saldos positivos protected, pasivos pendientes y apartados financiados aún no excluidos; los saldos negativos siguen visibles como déficit. Cada compromiso tiene identidad y porción ya excluida para evitar doble descuento entre cuenta protegida, meta, reserva, recibo, tarjeta y deuda. Transferir free→protected conserva patrimonio y reduce disponible. Los reversos que empeoran una cuenta por debajo de cero se rechazan; ajustes con motivo permiten conciliación explícita.
 
 ## Tarjetas V1 implementadas
 
-Disponible real resta una vez la deuda total de tarjetas por moneda; patrimonio resta ese pasivo. No existen apartados de TC implementados: al incorporarlos deben referenciar el mismo compromiso para evitar duplicación. Saldo inicial de deuda no es gasto. Compra aumenta gasto y deuda, sin cambiar banco; pago reduce banco y deuda sin gasto nuevo. Se bloquean compras sobre límite y pagos superiores a deuda.
+Disponible real resta una vez la deuda total de tarjetas por moneda; patrimonio resta ese pasivo. Los apartados que cubren TC se vinculan al mismo pasivo y no añaden otro descuento a Disponible real. Saldo inicial de deuda no es gasto. Compra aumenta gasto y deuda, sin cambiar banco; pago reduce banco y deuda sin gasto nuevo. Se bloquean compras sobre límite y pagos superiores a deuda.
 
 Corte inclusivo por effective_date; días inexistentes se ajustan al último del mes. Vencimiento: primera ocurrencia del día configurado estrictamente posterior al corte, sin ajustes de feriados. Saldo al último corte es la deuda histórica del ledger hasta esa fecha; el pendiente de cada ciclo usa su clasificación actual. Corregir clasificación no altera fecha efectiva, saldo histórico, deuda ni gasto. Pagos se aplican FIFO por fecha de corte; el desglose se reconstruye atómicamente al registrar datos retroactivos, corregir ciclo o revertir compra.
 

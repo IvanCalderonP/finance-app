@@ -1,3 +1,6 @@
+import { createPlanningApplication } from './planning-application';
+import { createBillingApplication } from './billing-application';
+import { createInsightsApplication } from './insights-application';
 import { createDebtApplication } from './debt-application';
 import { createCreditCardApplication } from './card-application';
 import { createFinanceApplication } from './application';
@@ -33,8 +36,12 @@ const unit = createSqliteUnitOfWork(async (): Promise<SqlConnection> => {
     all: <T>(sql: string, parameters = []) => db.getAllAsync<T>(sql, parameters),
     close: () => db.closeAsync(),
   };
-}, runtime);
+}, runtime,()=>{void import('../notifications/local-reminders').then(module=>module.queueReminderRefresh());});
 export const finance = createFinanceApplication(unit, runtime);
 export const creditCards = createCreditCardApplication(unit, runtime);
 
 export const debts = createDebtApplication(unit, runtime);
+
+export const planning=createPlanningApplication(unit,runtime);
+export const billing=createBillingApplication(unit,runtime);
+export const insights=createInsightsApplication(unit,runtime);

@@ -32,7 +32,7 @@ test('opt-in demo uses all current modules and reconciles available money', () =
   assert.equal(data.accounts.length, 3);
   assert.equal(data.cards.length, 1);
   assert.equal(data.debts.length, 2);
-  assert.deepEqual(data.totals[0], { currency: 'USD', payableMinor: 3000, receivableMinor: 7000,
+  assert.deepEqual(data.totals[0], { currency: 'USD', payableMinor: 3000, receivableMinor: 7000,committedMinor:33000,reservedMinor:0,
     netWorthLiquidMinor: 128000, cardDebtMinor: 10000, physicalMinor: 141000, availableMinor: 108000,
     netWorthMinor: 135000, incomeMinor: 0, expenseMinor: 2000 });
   assert.equal(data.cards[0].debtMinor, 10000);

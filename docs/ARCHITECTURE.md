@@ -1,92 +1,37 @@
 # Arquitectura de Finance App
 
-Estado: arquitectura general aprobada y decisiones V1 incorporadas, 2026-10-12. Documentación previa a implementación. Las decisiones propuestas requieren revisión antes de programar sus módulos.
+Estado: implementación local de cuentas, movimientos, tarjetas, deudas, planificación, recibos, distribución, calendario, estadísticas y preferencias (14 de octubre de 2026). Este documento describe el código actual; los servicios de nube, cifrado y panel Admin siguen siendo diseño.
 
-## Objetivo y límites
+## Fuente de verdad y capas
 
-Mostrar dinero realmente disponible después de compromisos, sin contar dos veces un mismo recurso. La aplicación financiera es local-first: SQLite local es la fuente de verdad; lectura, escritura, cálculos, calendario y backups por archivo funcionan sin internet ni cuenta. Supabase se limita a identidad, autorización remota, administración y backups opcionales. No hay réplica continua de movimientos ni resolución automática de conflictos entre dispositivos.
+SQLite local (`finance-local-v1.db`) es la fuente financiera. Los saldos, deudas, Disponible real, patrimonios, presupuestos y estadísticas se reconstruyen a partir de asientos, desgloses y eventos de financiación. Supabase no forma parte de la ruta de lectura o escritura financiera.
 
-## Capas y dependencias
+- `src/app/`: rutas delgadas de Expo Router. La barra inferior contiene Inicio, Movimientos, Calendario, Metas y Más; las rutas de herramientas permanecen accesibles desde Más y desde enlaces internos.
+- `src/features/` y `src/components/`: formularios, estados de carga, navegación, aspecto claro/oscuro y ocultación visual de montos.
+- `src/services/finance/`: casos de uso. Todas las escrituras financieras se realizan dentro de una unidad de trabajo SQLite; se comprueban perfil, moneda, idempotencia y financiación antes del commit.
+- `src/financial-engine/`: reglas de dinero, ledger, tarjetas, deudas, presupuesto, recurrencia, calendario y estadísticas, sin acceso a React ni SQLite.
+- `src/database/finance/`: migraciones, repositorios y conexión privada. Una cola serializa el acceso; `BEGIN IMMEDIATE`, `COMMIT` y `ROLLBACK` conservan la atomicidad.
+- `src/services/notifications/`: selección de próximos recordatorios y sincronización con notificaciones locales tras commit o al volver a primer plano.
+- `src/database/technical/`: laboratorio SQLite independiente, con datos sintéticos y pruebas de exportación/restauración del laboratorio.
 
-| Capa | Responsabilidad | Dependencias permitidas |
-| --- | --- | --- |
-| Rutas/UI | Presentar datos, validar entrada básica y solicitar acciones | Casos de uso, hooks de presentación |
-| Aplicación | Orquestar comandos, repositorios, permisos locales y transacciones | Motor y contratos de infraestructura |
-| Motor financiero | Validar invariantes y producir efectos contables y de compromisos | Tipos de dominio; sin React, SQLite, Supabase, red ni APIs nativas |
-| Persistencia | Guardar efectos atómicamente, consultar y reconstruir proyecciones | Adaptador SQLite y contratos |
-| Servicios de plataforma | Archivos, secretos, recordatorios, ciclo de vida y backups | Adaptadores por plataforma |
-| Servicios remotos | Auth, permisos de cloud y Storage | Red; no necesarios para operaciones financieras |
+El reloj, la fecha civil local y los UUID se inyectan. Las fechas de negocio se guardan como `AAAA-MM-DD`, separadas de los instantes UTC de auditoría. El motor no interpreta automáticamente un vencimiento como pago, ingreso o desbloqueo.
 
-Flujo de escritura: UI → caso de uso → leer estado dentro de una unidad de trabajo → motor → validar → persistir movimiento, asientos, desglose, compromisos y proyecciones en una única transacción → notificar UI. Las notificaciones y llamadas de red ocurren después del commit, con reintentos idempotentes; nunca mantienen abierta una transacción financiera.
+## Contabilidad y compromisos
 
-El motor tiene cálculos puros y comandos que reciben un snapshot, una fecha explícita e identificador de operación y devuelven efectos o errores de dominio. Ejemplos futuros: calculateAvailableBalance, calculateNetWorth, registerCreditCardPurchase, payCreditCard, registerIncome, distributeIncome, reserveFunds, releaseReservedFunds, registerDebt, receiveDebtPayment, payDebt, registerBillPayment, transferBetweenAccounts. El reloj y generador de IDs se inyectan. El motor no guarda datos ni registra telemetría sensible.
+Todo cambio confirmado de saldo tiene asientos `POSTED` equilibrados. Gasto, compra TC y gasto diario tienen un solo movimiento contable. El desglose edita únicamente líneas de categoría, y conserva asientos y deuda; una reclasificación tras reverso actualiza el original y las líneas negativas del reverso en la misma transacción. Los cambios quedan en `split_edits`.
 
-## Organización propuesta (no crear aún todos los archivos)
+`funding_buckets` vincula dinero existente de una cuenta a categoría, meta, reserva, recibo, tarjeta o deuda. `funding_events` conserva aportes, traslados, consumo, restauración y liberación. Un presupuesto sin financiación solo mide el gasto. El motor valida que una cuenta no financie más que su saldo y que la financiación de pasivos no aumente el descuento de un pasivo ya incluido en Disponible real. Las cuentas `protected` excluyen su saldo de Disponible real sin volver a excluir las metas o reservas financiadas en ellas.
 
-```text
-src/
-  app/                      # Expo Router: rutas y layouts delgados
-  features/
-    dashboard/ transactions/ accounts/ cards/ budgets/ bills/
-    income/ allocations/ goals/ reserves/ debts/ calendar/
-    statistics/ reminders/ backups/ auth/ settings/
-      application/          # casos de uso del módulo
-      components/ hooks/    # presentación específica
-  components/               # presentación compartida
-  financial-engine/
-    model/ commands/ calculations/ policies/ errors/ __tests__/
-  database/
-    contracts/ sqlite/ repositories/ projections/ migrations/
-  services/
-    backup/ notifications/ security/ remote/ platform/
-  hooks/                    # hooks compartidos
-  store/                    # estado efímero de UI; no segunda base financiera
-  utils/                    # funciones técnicas sin reglas de negocio
-  types/                    # contratos compartidos, sin copias del dominio
-assets/
-docs/
-```
+Recibos y plantillas de distribución usan movimientos y apartados existentes: pagar con banco registra un gasto y consume la reserva; pagar con TC registra una compra y convierte la porción financiada en cobertura de esa deuda. Confirmar una distribución de ingreso y sus apartados ocurre atómicamente. Metas y reservas no son cuentas adicionales. Una reserva con `unlock_on` exige liberación explícita una vez llegue la fecha local.
 
-El proyecto admin será una aplicación web separada, fuera de src/app. No tendrá ruta ni opción Admin en la aplicación del usuario. No se elige todavía una librería de estado, validación, gráficos, calendario, base de datos o cifrado.
+## Plataformas y recordatorios
 
-## Persistencia y plataformas
+Android/iOS usan `expo-sqlite`. Web usa el adaptador oficial SQLite/WASM de Expo como prueba técnica separada; su soporte y persistencia del navegador no equivalen a una garantía de conservación o cifrado. El laboratorio comprobó operaciones, reinicio y archivo sintético; siguen sin validarse plenamente múltiples pestañas, cuotas, modo privado, carga offline y recuperación financiera real. Ver [STORAGE_TECHNICAL_REPORT.md](STORAGE_TECHNICAL_REPORT.md).
 
-Android/iOS: adaptador SQLite local. Web: mismo motor y contratos, adaptador SQLite/WASM local a validar en una prueba técnica antes de construir módulos. Según [Expo SQLite SDK 57](https://docs.expo.dev/versions/v57.0.0/sdk/sqlite/), el soporte web es alpha y exige WASM y cabeceras para SharedArrayBuffer. No confundir la pantalla web actual con persistencia financiera offline ya implementada.
+Las preferencias de recordatorios se guardan por evento o serie. En móvil, la app programa como máximo 60 solicitudes próximas a las 09:00 locales y recalcula al cambiar datos o al reabrir. Pide permiso al activar/sincronizar desde la UI; si se deniega, el calendario continúa funcionando. Se calculan como máximo 366 días de eventos futuros y se reprograman en aperturas posteriores. Web muestra calendario pero no programa estas notificaciones nativas. Un recordatorio jamás escribe asientos. La entrega final depende del sistema operativo; la nueva versión aún requiere una comprobación física en Android. Referencia: [Expo Notifications SDK 57](https://docs.expo.dev/versions/v57.0.0/sdk/notifications/).
 
-La fase técnica deberá comprobar reinicio, persistencia del navegador, cuotas, modo privado, concurrencia entre pestañas y aislamiento del origen. El funcionamiento web offline requiere además una estrategia de caché de recursos de aplicación/PWA; SQLite por sí solo no permite cargar la app sin red. Si el adaptador no satisface las pruebas, revisar una alternativa SQLite local tras aprobación, sin convertir Supabase en fuente financiera. La eliminación de datos del navegador y la desinstalación pueden destruir datos: ofrecer exportación local y explicar persistencia real.
+## Límites actuales
 
-Una base por perfil local; el perfil LOCAL no necesita user_id remoto. Asociar una cuenta remota al perfil requiere acción explícita, no migración ni upload automático. Cambiar usuario no reutiliza silenciosamente otro perfil. Auth vencido no bloquea funciones locales. La autorización cloud se verifica remotamente al subir/restaurar, nunca se confía solo en el rol guardado.
+Los datos financieros locales todavía no están cifrados. La ocultación de montos afecta la interfaz, no los datos ni las notificaciones ya mostradas por el sistema. Usar solo datos sintéticos durante esta etapa. La exportación/restauración con validación está implementada en el laboratorio técnico, no como backup financiero de producción. Supabase, Auth, cifrado, biometría, sincronización, panel Admin y lectura de avisos bancarios no están implementados. El panel Admin sigue previsto como aplicación web separada sin acceso a saldos ni llaves.
 
-## Decisiones transversales
-
-- Importes enteros en unidades menores y moneda ISO; porcentajes en puntos básicos. No aritmética monetaria con decimales binarios. Validar límites seguros de JavaScript; definir escala por moneda.
-- Resultado por moneda; no sumar USD y otra moneda. Tipo de cambio, conversión y patrimonio consolidado quedan fuera de la primera fase.
-- IDs locales UUID; idempotencia por perfil/operación. Movimientos confirmados inmutables con reversos explícitos y trazabilidad.
-- Movimientos y asientos constituyen la fuente contable. Saldos y totales son proyecciones reconstruibles; nunca valores editables independientes.
-- Fechas de instante en UTC; vencimientos/cortes como fechas civiles con zona del perfil. La fecha de negocio determina presupuesto y ciclo, no el momento de sincronización.
-- Presupuestos son medición; reservas/asignaciones son compromisos. Vínculos de origen permiten compartir identidad sin duplicar descuento.
-- Contabilidad de recursos, obligaciones y por cobrar separada de reconocimiento de ingreso/gasto; liquidar principal no repite una categoría de gasto.
-
-## Decisiones pendientes antes de implementar
-
-Quedan pendientes ventana de gastos hormiga, automatización de intereses/comisiones, reembolsos parciales, edición retroactiva general, llaves de recuperación y equivalencia de seguridad en web. Están aprobados free/protected por cuenta sin doble descuento, presupuesto separado de apartado, dos operaciones de efectivo, ambos patrimonios con/sin por cobrar, corte inclusivo por effective_date y último día válido, corrección manual sin repetir asientos y reservas liberables con confirmación. Las propuestas restantes están en los demás documentos; no son funcionalidades existentes.
-
-## Criterios de aceptación de arquitectura
-
-Motor testeable sin React ni dispositivo; escritura atómica e idempotente; reconstrucción determinista de saldos; operaciones principales sin red ni sesión; ningún dato financiero en admin/telemetría; restauración validada sin pérdida del perfil anterior; pruebas reales de persistencia y offline por plataforma. Implementar cada módulo solo con reglas y contratos definidos.
-
-## Fase 2 autorizada: laboratorio separado
-
-Base finance-storage-lab-v1.db, sin tablas financieras, datos reales, cifrado ni cloud. Migración técnica V1 con lab_parents/lab_samples y PRAGMA user_version. Pantalla /storage-lab únicamente para diagnóstico. Adaptador Expo SQLite y núcleo SQL testeable con SQLite de Node (evidencia técnica auxiliar, no equivalente a runtime Android/Web). Migración y apertura no insertan datos: esto evita confundir resembrado con persistencia. Exportación/importación JSON limitada a filas sintéticas conocidas.
-
-Web es una prueba independiente, no aprobación de confiabilidad. Habilitar WASM y cabeceras de aislamiento para el ensayo, sin implementar aún caché/PWA ni afirmar arranque offline. No hay fallback remoto a Supabase. Admin permanece solo documentado. Ver STORAGE_TECHNICAL_REPORT.md para resultados y límites de evidencia.
-
-## Tarjetas V1
-
-Motor puro cards.ts, servicio card-application.ts y repositorio SQLite separado, compartiendo la misma conexión privada y cola del núcleo. Asientos, clasificación de ciclos, pagos y aplicaciones se confirman en una sola transacción. Inicio incluye deuda y disponible; /cards ofrece operaciones mínimas. Sin dependencias nuevas. Android del núcleo confirmado por el usuario («no si quedo sigue»); no fue observado directamente por el agente. Los tests usan SQLite de Node y datos sintéticos. El usuario confirmó en Expo Go Android la creación de tarjeta, compra, pago parcial y persistencia tras cerrar y reabrir. Web continúa como evaluación separada.
-
-Validación automatizada: 72/72 tests (27 nuevos de tarjetas), TypeScript y lint correctos, Expo Doctor 21/21. Exportación Android Hermes y web completada; /cards respondió HTTP 200. La exportación verifica empaquetado; la prueba física posterior de tarjetas fue confirmada por el usuario. La persistencia SQLite web requiere evaluación separada.
-
-## Deudas personales V1
-
-Motor puro `financial-engine/debts.ts`; servicio, proyecciones y repositorio SQLite separados, sobre la misma conexión y cola financiera. Inicio combina pasivos de TC y deudas como compromisos distintos y muestra cuentas por cobrar por separado. `/debts` ofrece dos pestañas y operaciones con datos sintéticos. Pruebas SQLite verifican idempotencia, reversos, rollback, perfiles y reapertura; exportación Android/web verifica empaquetado. La prueba física de tarjetas fue confirmada por el usuario en Expo Go; la UI de deudas aún no se ha probado en el dispositivo.
+Los reembolsos parciales, saldo acreedor de TC, intereses automáticos, cambio de moneda, edición general de asientos antiguos y reglas de seguridad web necesitan diseño y pruebas adicionales. Los nuevos módulos deben añadir migración secuencial, repositorio, caso de uso, proyección y pruebas de rollback/compatibilidad antes de presentar datos reales.

@@ -1,5 +1,6 @@
+import { ThemeScrollView as ScrollView, ThemeText as Text, ThemeView as View } from '@/components/appearance';
 import { useEffect, useRef, useState } from 'react';
-import { Alert, Button, Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, Button, Platform, StyleSheet } from 'react-native';
 import { lab } from '@/database/technical/expo-adapter';
 import { parseSnapshot } from '@/database/technical/lab';
 import { exportSyntheticFile, importSyntheticFile } from '@/services/technical-files';

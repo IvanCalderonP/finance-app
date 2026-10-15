@@ -1,6 +1,7 @@
-import { useFocusEffect } from 'expo-router';
+import { ThemePressable as Pressable, ThemeText as Text, ThemeView as View } from '@/components/appearance';
+import { useFocusEffect, useLocalSearchParams, router } from 'expo-router';
 import { useCallback, useRef, useState } from 'react';
-import { Pressable, StyleSheet, Switch, Text, View } from 'react-native';
+import { StyleSheet, Switch } from 'react-native';
 import { AppButton, Badge, Card, Chip, EmptyState, Field, FormSheet, Loading, Metric, Notice, Screen, SectionHeading, palette, ui } from '@/components/ui';
 import { displayDate, displayMoney, localToday } from '@/components/format';
 import { cycleForDate } from '../../financial-engine/cards';
@@ -29,6 +30,7 @@ function CreditCardVisual({ summary, onPress, disabled = false }: { summary: Car
 }
 
 export default function CreditCardsScreen() {
+  const params=useLocalSearchParams<{cardId?:string;action?:string}>();const incoming=useRef('');
   const [profileId, setProfileId] = useState('');
   const [data, setData] = useState<FinanceSnapshot>();
   const [selected, setSelected] = useState('');
@@ -48,8 +50,12 @@ export default function CreditCardsScreen() {
   const [originalId, setOriginalId] = useState('');
   const refresh = useCallback(async () => {
     const profile = await finance.initialProfile(); setProfileId(profile.id);
-    setData(await finance.snapshot(profile.id));
-  }, []);
+    const snapshot=await finance.snapshot(profile.id);setData(snapshot);
+    const token=JSON.stringify([params.cardId,params.action]);if(incoming.current!==token){incoming.current=token;const chosen=snapshot.cards.find(row=>row.card.id===params.cardId)??(params.action==='PURCHASE'?snapshot.cards.find(row=>row.card.status==='active'):undefined);
+     if(chosen)setSelected(chosen.card.id);
+     if(chosen&&params.action==='PURCHASE'){setMode('PURCHASE');setAmount('');setEffectiveDate(localToday());setDescription('');setCategoryId(snapshot.categories.find(row=>row.kind==='EXPENSE')?.id??'');operationKey.current=undefined;}
+    }
+  }, [params.cardId,params.action]);
   const reload = useCallback(async () => {
     setFetching(true);
     try { await refresh(); }
@@ -155,6 +161,7 @@ export default function CreditCardsScreen() {
             return <Card key={charge.entryId}>
               <View style={styles.activityRow}><View style={{ flex: 1, gap: 5 }}><Text style={ui.heading}>{transaction?.description || label}</Text><Text style={ui.muted}>{displayDate(charge.effectiveDate)} · {label}</Text></View><Text style={[styles.activityAmount, charge.amountMinor < 0 && { color: palette.primary }]}>{charge.amountMinor < 0 ? '−' : ''}{money(Math.abs(charge.amountMinor))}</Text></View>
               <View style={ui.row}><Badge label={isReversed ? 'Compra revertida' : label} tone={isReversed ? 'neutral' : charge.type === 'REVERSAL' ? 'green' : 'neutral'} />{cycle && <Text style={ui.muted}>Corte {displayDate(cycle.closesOn)}</Text>}</View>
+              {charge.type === 'EXPENSE' && <AppButton title="Desglosar gasto" variant="secondary" disabled={disabled} onPress={()=>router.push({pathname:'/transactions',params:{transactionId:charge.transactionId,action:'SPLIT'}})}/> }
               {charge.type === 'EXPENSE' && !isReversed && <View style={ui.row}><AppButton title="Corregir ciclo" variant="ghost" disabled={disabled} onPress={() => begin('CYCLE', charge.transactionId)} /><AppButton title="Revertir compra" variant="ghost" disabled={disabled} onPress={() => begin('REVERSE', charge.transactionId)} /></View>}
             </Card>;
           })}

@@ -8,7 +8,7 @@ export interface Account {
   availabilityPolicy: AvailabilityPolicy; active: boolean; nodeId: string; createdAt: string;
 }
 export interface LedgerNode { id: string; profileId: string; currency: string; kind: NodeKind }
-export interface Category { id: string; profileId: string; name: string; kind: 'INCOME' | 'EXPENSE'; code: string }
+export interface Category { id: string; profileId: string; name: string; kind: 'INCOME' | 'EXPENSE'; code: string; parentId?: string | null }
 export interface Entry { nodeId: string; debitMinor: number; creditMinor: number }
 export interface Split { categoryId: string; amountMinor: number }
 export interface Transaction {
@@ -46,3 +46,6 @@ export function date(value: string) {
   const parsed = new Date(`${value}T00:00:00.000Z`);
   assert(!Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value, 'Fecha inválida');
 }
+
+export interface AccountPolicyEvent {id:string;accountId:string;effectiveDate:string;policy:AvailabilityPolicy;createdAt:string}
+export interface AppPreferences {theme:'light'|'dark'|'system';hideAmounts:boolean}

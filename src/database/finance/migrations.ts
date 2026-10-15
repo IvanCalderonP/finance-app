@@ -1,3 +1,7 @@
+import { MIGRATION_004 } from './migration004.ts';
+import { MIGRATION_005 } from './migration005.ts';
+import { MIGRATION_006 } from './migration006.ts';
+import { MIGRATION_007 } from './migration007.ts';
 import { MIGRATION_003 } from './migration003.ts';
 import { MIGRATION_002 } from './migration002.ts';
 import { atomic } from './connection.ts';
@@ -87,7 +91,7 @@ export async function migrateFinance(db: SqlConnection, timestamp: string) {
   const fk = await db.all<{ foreign_keys: number }>('PRAGMA foreign_keys');
   assert(fk[0]?.foreign_keys === 1, 'No se pudieron activar las relaciones');
   const version = (await db.all<{ user_version: number }>('PRAGMA user_version'))[0].user_version;
-  assert(version <= 3, 'La base pertenece a una versión futura');
+  assert(version <= 7, 'La base pertenece a una versión futura');
   if (version === 0) await atomic(db, async () => {
     // Recheck after obtaining the writer lock, including another connection's migration.
     const current = (await db.all<{ user_version: number }>('PRAGMA user_version'))[0].user_version;
@@ -127,6 +131,17 @@ export async function migrateFinance(db: SqlConnection, timestamp: string) {
       assert((await db.all('PRAGMA foreign_key_check')).length === 0, 'Relaciones inválidas después de migrar deudas');
       await db.run('INSERT INTO schema_migrations VALUES(?,?)', [3, timestamp]);
       await db.exec('PRAGMA user_version=3');
+    });
+  }
+
+  for(const [next,sql] of [[4,MIGRATION_004],[5,MIGRATION_005],[6,MIGRATION_006],[7,MIGRATION_007]] as const){
+    if((await db.all<{user_version:number}>('PRAGMA user_version'))[0].user_version>=next)continue;
+    await atomic(db,async()=>{
+      const current=(await db.all<{user_version:number}>('PRAGMA user_version'))[0].user_version;
+      if(current>=next)return;
+      assert(current===next-1,'Versión de migración inesperada');await db.exec(sql);
+      assert((await db.all('PRAGMA foreign_key_check')).length===0,'Relaciones inválidas después de migrar');
+      await db.run('INSERT INTO schema_migrations VALUES(?,?)',[next,timestamp]);await db.exec(`PRAGMA user_version=${next}`);
     });
   }
 
